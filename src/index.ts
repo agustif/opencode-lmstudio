@@ -85,6 +85,38 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
     }
   }
 
+  // Get currently loaded/active models from LM Studio
+  async function getLoadedModels(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<string[]> {
+    try {
+      const url = `${baseURL}${LM_STUDIO_MODELS_ENDPOINT}`
+      const response = await fetch(url, {
+        method: "GET",
+        signal: AbortSignal.timeout(2000),
+      })
+      if (!response.ok) return []
+      
+      const data = (await response.json()) as LMStudioModelsResponse
+      return data.data?.map(model => model.id) || []
+    } catch {
+      return []
+    }
+  }
+
+  // Categorize models by type
+  function categorizeModel(modelId: string): 'chat' | 'embedding' | 'unknown' {
+    const lowerId = modelId.toLowerCase()
+    if (lowerId.includes('embedding') || lowerId.includes('embed')) {
+      return 'embedding'
+    }
+    if (lowerId.includes('gpt') || lowerId.includes('llama') || 
+        lowerId.includes('claude') || lowerId.includes('qwen') ||
+        lowerId.includes('mistral') || lowerId.includes('gemma') ||
+        lowerId.includes('phi') || lowerId.includes('falcon')) {
+      return 'chat'
+    }
+    return 'unknown'
+  }
+
   // Auto-detect LM Studio if not configured
   async function autoDetectLMStudio(): Promise<string | null> {
     const commonPorts = [1234, 8080, 11434]
@@ -156,17 +188,40 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
       // Merge discovered models with configured models
       const existingModels = lmstudioProvider.models || {}
       const discoveredModels: Record<string, any> = {}
+      let chatModelsCount = 0
+      let embeddingModelsCount = 0
 
       for (const model of models) {
-        // Use model ID as key, or create a sanitized version
-        const modelKey = model.id.replace(/[^a-zA-Z0-9_-]/g, "_")
+        // Use model ID as key directly for better readability, fallback to sanitized version
+        let modelKey = model.id
+        if (!/^[a-zA-Z0-9_-]+$/.test(modelKey)) {
+          modelKey = model.id.replace(/[^a-zA-Z0-9_-]/g, "_")
+        }
         
         // Only add if not already configured
         if (!existingModels[modelKey] && !existingModels[model.id]) {
-          discoveredModels[modelKey] = {
+          const modelType = categorizeModel(model.id)
+          const modelConfig: any = {
             id: model.id,
-            name: model.id,
+            name: `${model.id} (LM Studio)`,
           }
+
+          // Add additional metadata based on model type
+          if (modelType === 'embedding') {
+            embeddingModelsCount++
+            modelConfig.modalities = {
+              input: ["text"],
+              output: ["embedding"]
+            }
+          } else if (modelType === 'chat') {
+            chatModelsCount++
+            modelConfig.modalities = {
+              input: ["text", "image"],
+              output: ["text"]
+            }
+          }
+
+          discoveredModels[modelKey] = modelConfig
         }
       }
 
@@ -177,9 +232,31 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
           ...discoveredModels,
         }
         log.info("Added discovered LM Studio models to config", { 
-          count: Object.keys(discoveredModels).length 
+          total: Object.keys(discoveredModels).length,
+          chat: chatModelsCount,
+          embedding: embeddingModelsCount
         })
+
+        // Provide helpful guidance if no chat models are available
+        if (chatModelsCount === 0 && embeddingModelsCount > 0) {
+          log.warn("Only embedding models found. To use chat models:", {
+            steps: [
+              "1. Open LM Studio application",
+              "2. Download a chat model (e.g., llama-3.2-3b-instruct)",
+              "3. Load the model in LM Studio",
+              "4. Ensure server is running"
+            ]
+          })
+        }
       }
+    } else {
+      log.warn("No models found in LM Studio. Please:", {
+        steps: [
+          "1. Open LM Studio application",
+          "2. Download and load a model",
+          "3. Start the server"
+        ]
+      })
     }
   }
 
@@ -192,6 +269,41 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
       // Monitor for session events to provide LM Studio status
       if (event.type === "session.created" || event.type === "session.updated") {
         // Could add health check monitoring here in the future
+      }
+    },
+
+    // Key hook: Called right before model execution - perfect for preloading!
+    "chat.params": async (input, output) => {
+      const { model, provider } = input
+      
+      // Only handle LM Studio provider
+      if (provider.id !== "lmstudio") {
+        return
+      }
+
+      const modelKey = `${provider.id}/${model.id}`
+      log.info("LM Studio model about to be used", { model: modelKey })
+      
+      // Check if model is actually loaded in LM Studio
+      const loadedModels = await getLoadedModels(provider.options?.baseURL?.replace('/v1', '') || DEFAULT_LM_STUDIO_URL)
+      const isModelLoaded = loadedModels.includes(model.id)
+      
+      if (!isModelLoaded) {
+        log.warn("Model not loaded in LM Studio", { 
+          model: model.id,
+          loadedModels,
+          suggestion: "Load this model in LM Studio UI first"
+        })
+        
+        // Try to provide helpful guidance through the options
+        output.options.lmstudioNotLoaded = {
+          model: model.id,
+          availableModels: loadedModels,
+          message: `Model '${model.id}' needs to be loaded in LM Studio first. Available models: ${loadedModels.join(', ')}`
+        }
+      } else {
+        log.info("Model is loaded and ready", { model: model.id })
+        output.options.lmstudioReady = true
       }
     },
   }

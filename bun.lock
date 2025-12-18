@@ -1,0 +1,32 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "opencode-lmstudio",
+      "dependencies": {
+        "@opencode-ai/plugin": "^1.0.0",
+      },
+      "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.0.0",
+      },
+      "peerDependencies": {
+        "@opencode-ai/plugin": "^1.0.0",
+      },
+    },
+  },
+  "packages": {
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.0.166", "", { "dependencies": { "@opencode-ai/sdk": "1.0.166", "zod": "4.1.8" } }, "sha512-FHCQjoQVnyXHhkboUmcJisZ25mcmNxt/fq5jdVKixblJ2kUoEDqth7kpMSPbZ0bvxRg80a1Vv+sN/MH6ELxv+Q=="],
+
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.0.166", "", {}, "sha512-9ngA6vHqu4V8EVsJOt3PWDcg/NuaTSm3hadXNhTMZsPWxBkup6nu1SPGrwO6pnEep9BOiZBbkDu0axc10bk9GA=="],
+
+    "@types/node": ["@types/node@20.19.27", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-N2clP5pJhB2YnZJ3PIHFk5RkygRX5WO/5f0WC08tp0wd+sv0rsJk3MqWn3CbNmT2J505a5336jaQj4ph1AdMug=="],
+
+    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+
+    "undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
+
+    "zod": ["zod@4.1.8", "", {}, "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="],
+  }
+}
