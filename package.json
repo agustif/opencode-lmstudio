@@ -21,7 +21,8 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "build": "npm run typecheck && npm run test:run",
     "validate": "npm run lint && npm run typecheck && npm run test:run",
-    "validate:config": "bun scripts/validate-config.ts"
+    "validate:config": "bun scripts/validate-config.ts",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "opencode",
