@@ -117,6 +117,217 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
     return 'unknown'
   }
 
+  // Enhanced model similarity matching
+  function findSimilarModels(targetModel: string, availableModels: string[]): Array<{ model: string; similarity: number; reason: string }> {
+    const target = targetModel.toLowerCase()
+    const targetTokens = target.split(/[-_\s]/).filter(Boolean)
+    
+    return availableModels
+      .map(model => {
+        const candidate = model.toLowerCase()
+        const candidateTokens = candidate.split(/[-_\s]/).filter(Boolean)
+        
+        let similarity = 0
+        const reasons: string[] = []
+        
+        // Exact match gets highest score
+        if (candidate === target) {
+          similarity = 1.0
+          reasons.push("Exact match")
+        }
+        
+        // Check for common model family prefixes
+        const targetPrefix = targetTokens[0]
+        const candidatePrefix = candidateTokens[0]
+        if (targetPrefix && candidatePrefix && targetPrefix === candidatePrefix) {
+          similarity += 0.5
+          reasons.push(`Same family: ${targetPrefix}`)
+        }
+        
+        // Check for common suffixes (quantization levels, sizes)
+        const commonSuffixes = ['3b', '7b', '13b', '70b', 'q4', 'q8', 'instruct', 'chat', 'base']
+        for (const suffix of commonSuffixes) {
+          if (target.includes(suffix) && candidate.includes(suffix)) {
+            similarity += 0.2
+            reasons.push(`Shared suffix: ${suffix}`)
+          }
+        }
+        
+        // Token overlap score
+        const commonTokens = targetTokens.filter(token => candidateTokens.includes(token))
+        if (commonTokens.length > 0) {
+          similarity += (commonTokens.length / Math.max(targetTokens.length, candidateTokens.length)) * 0.3
+          reasons.push(`Common tokens: ${commonTokens.join(', ')}`)
+        }
+        
+        return {
+          model,
+          similarity: Math.min(similarity, 1.0),
+          reason: reasons.join(", ")
+        }
+      })
+      .filter(item => item.similarity > 0.1) // Only include models with some similarity
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 5) // Top 5 suggestions
+  }
+
+  // Retry logic with exponential backoff
+  async function retryWithBackoff<T>(
+    operation: () => Promise<T>, 
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+  ): Promise<{ success: boolean; result?: T; error?: string }> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await operation()
+        return { success: true, result }
+      } catch (error) {
+        if (attempt === maxRetries) {
+          return { 
+            success: false, 
+            error: error instanceof Error ? error.message : String(error) 
+          }
+        }
+        
+        const delay = baseDelay * Math.pow(2, attempt)
+        log.warn(`Retrying operation after ${delay}ms`, { 
+          attempt: attempt + 1, 
+          maxRetries: maxRetries + 1,
+          error: error instanceof Error ? error.message : String(error)
+        })
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+    return { success: false, error: "Max retries exceeded" }
+  }
+
+  // Smart error categorization
+  function categorizeError(error: any, context: { baseURL: string; modelId: string }): {
+    type: 'offline' | 'not_found' | 'network' | 'permission' | 'timeout' | 'unknown'
+    severity: 'low' | 'medium' | 'high' | 'critical'
+    message: string
+    canRetry: boolean
+    autoFixAvailable: boolean
+  } {
+    const errorStr = String(error).toLowerCase()
+    const { baseURL, modelId } = context
+    
+    // Network/connection issues
+    if (errorStr.includes('econnrefused') || errorStr.includes('fetch failed') || errorStr.includes('network')) {
+      return {
+        type: 'offline',
+        severity: 'critical',
+        message: `Cannot connect to LM Studio at ${baseURL}. Ensure LM Studio is running and the server is active.`,
+        canRetry: true,
+        autoFixAvailable: true
+      }
+    }
+    
+    // Timeout issues
+    if (errorStr.includes('timeout') || errorStr.includes('aborted')) {
+      return {
+        type: 'timeout',
+        severity: 'medium',
+        message: `Request to LM Studio timed out. This might happen with large models or slow systems.`,
+        canRetry: true,
+        autoFixAvailable: false
+      }
+    }
+    
+    // Model not found
+    if (errorStr.includes('404') || errorStr.includes('not found')) {
+      return {
+        type: 'not_found',
+        severity: 'high',
+        message: `Model '${modelId}' not found. Check if the model is installed in LM Studio.`,
+        canRetry: false,
+        autoFixAvailable: false
+      }
+    }
+    
+    // Permission issues
+    if (errorStr.includes('401') || errorStr.includes('403') || errorStr.includes('unauthorized')) {
+      return {
+        type: 'permission',
+        severity: 'high',
+        message: `Authentication or permission issue with LM Studio. Check your configuration.`,
+        canRetry: false,
+        autoFixAvailable: false
+      }
+    }
+    
+    // Unknown errors
+    return {
+      type: 'unknown',
+      severity: 'medium',
+      message: `Unexpected error: ${errorStr}`,
+      canRetry: true,
+      autoFixAvailable: false
+    }
+  }
+
+  // Generate auto-fix suggestions
+  function generateAutoFixSuggestions(errorCategory: ReturnType<typeof categorizeError>): Array<{
+    action: string
+    command?: string
+    steps?: string[]
+    automated: boolean
+  }> {
+    const suggestions = []
+    
+    switch (errorCategory.type) {
+      case 'offline':
+        suggestions.push({
+          action: "Check if LM Studio is running",
+          steps: [
+            "1. Open LM Studio application",
+            "2. Verify the server is started",
+            "3. Check the server status indicator",
+            "4. Verify the server URL and port"
+          ],
+          automated: false
+        })
+        suggestions.push({
+          action: "Try alternative ports",
+          steps: [
+            "1. Check if LM Studio is running on a different port",
+            "2. Common ports: 1234, 8080, 11434",
+            "3. Update your OpenCode configuration"
+          ],
+          automated: false
+        })
+        break
+        
+      case 'not_found':
+        suggestions.push({
+          action: "Browse and install model",
+          steps: [
+            "1. Open LM Studio",
+            "2. Click the search icon (🔍)",
+            "3. Search for your desired model",
+            "4. Click 'Download' and wait for completion",
+            "5. Load the model after download"
+          ],
+          automated: false
+        })
+        break
+        
+      case 'timeout':
+        suggestions.push({
+          action: "Increase timeout or use smaller model",
+          steps: [
+            "1. Try a smaller model version",
+            "2. Increase request timeout in settings",
+            "3. Close other applications to free resources"
+          ],
+          automated: false
+        })
+        break
+    }
+    
+    return suggestions
+  }
+
   // Auto-detect LM Studio if not configured
   async function autoDetectLMStudio(): Promise<string | null> {
     const commonPorts = [1234, 8080, 11434]
@@ -272,7 +483,7 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
       }
     },
 
-    // Validate model availability before each request
+    // Enhanced model validation with smart error handling
     "chat.params": async (input, output) => {
       const { sessionID, agent, model, provider, message } = input
       
@@ -288,50 +499,97 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
         providerID: provider.info.id 
       })
       
-      // Check if model is actually loaded in LM Studio
       const baseURL = provider.options?.baseURL?.replace('/v1', '') || DEFAULT_LM_STUDIO_URL
-      const loadedModels = await getLoadedModels(baseURL)
-      const isModelLoaded = loadedModels.includes(model.id)
       
-      if (!isModelLoaded) {
-        log.warn("Model not loaded in LM Studio", { 
+      // Use retry logic for model validation
+      const validation = await retryWithBackoff(
+        async () => {
+          const loadedModels = await getLoadedModels(baseURL)
+          const isModelLoaded = loadedModels.includes(model.id)
+          
+          if (!isModelLoaded) {
+            throw new Error(`Model '${model.id}' not loaded`)
+          }
+          
+          return loadedModels
+        },
+        2, // Max 2 retries for model validation
+        500 // 500ms base delay
+      )
+      
+      if (!validation.success) {
+        // Categorize the error and provide smart suggestions
+        const errorCategory = categorizeError(validation.error, { baseURL, modelId: model.id })
+        const autoFixSuggestions = generateAutoFixSuggestions(errorCategory)
+        
+        log.warn("Model validation failed", { 
           sessionID,
           model: model.id,
-          loadedModels,
-          baseURL,
-          suggestion: "Load this model in LM Studio UI first"
+          error: validation.error,
+          errorType: errorCategory.type,
+          severity: errorCategory.severity,
+          baseURL
         })
         
-        // Provide helpful error message through options
+        // Get available models for similarity matching (last attempt)
+        let availableModels: string[] = []
+        try {
+          availableModels = await getLoadedModels(baseURL)
+        } catch (e) {
+          log.warn("Failed to get available models for suggestions", { error: e })
+        }
+        
+        // Use enhanced similarity matching
+        const similarModels = findSimilarModels(model.id, availableModels)
+        
+        // Provide comprehensive error response
         output.options.lmstudioValidation = {
           status: "error",
           model: model.id,
-          availableModels: loadedModels,
-          message: `Model '${model.id}' is not loaded in LM Studio. Please load it in the LM Studio UI first.`,
-          steps: [
+          availableModels,
+          errorCategory: errorCategory.type,
+          severity: errorCategory.severity,
+          message: errorCategory.message,
+          canRetry: errorCategory.canRetry,
+          autoFixAvailable: errorCategory.autoFixAvailable,
+          autoFixSuggestions,
+          steps: errorCategory.type === 'not_found' ? [
             "1. Open LM Studio application",
-            "2. Find the model in your models list",
-            "3. Click 'Load Model' to activate it",
-            "4. Ensure the server is running",
-            "5. Try your request again"
+            "2. Click the search icon (🔍) in the sidebar",
+            "3. Search for your desired model",
+            "4. Click 'Download' and wait for completion",
+            "5. Load the model after download",
+            "6. Ensure server is running",
+            "7. Try your request again"
+          ] : [
+            "1. Open LM Studio application",
+            "2. Verify the server is active (green indicator)",
+            "3. Check the server URL and port",
+            "4. Try loading the model manually",
+            "5. Retry your request"
           ],
-          similarModels: loadedModels.filter(m => 
-            m.toLowerCase().includes(model.id.split('-')[0].toLowerCase()) ||
-            model.id.toLowerCase().includes(m.split('-')[0].toLowerCase())
-          )
+          similarModels: similarModels.map(item => ({
+            model: item.model,
+            similarity: Math.round(item.similarity * 100),
+            reason: item.reason
+          }))
         }
       } else {
-        log.info("Model is loaded and ready", { 
+        log.info("Model validation successful", { 
           sessionID,
           model: model.id,
-          totalAvailable: loadedModels.length 
+          totalAvailable: validation.result?.length || 0,
+          retries: validation.success ? 0 : 1
         })
         
         output.options.lmstudioValidation = {
           status: "success",
           model: model.id,
-          availableModels: loadedModels,
-          message: `Model '${model.id}' is loaded and ready.`
+          availableModels: validation.result || [],
+          message: `Model '${model.id}' is loaded and ready.`,
+          performanceHint: validation.result && validation.result.length > 1 
+            ? `Note: ${validation.result.length} models loaded. Consider unloading unused models for better performance.` 
+            : undefined
         }
       }
     },
