@@ -27,6 +27,15 @@ const log = {
       console.warn(`[opencode-lmstudio] ${message}`, data || "")
     }
   },
+  debug: (message: string, data?: Record<string, any>) => {
+    if (typeof console !== "undefined" && console.debug) {
+      console.debug(`[opencode-lmstudio] ${message}`, data || "")
+    }
+    // Fallback to info if debug not available
+    else if (typeof console !== "undefined" && console.log) {
+      console.log(`[opencode-lmstudio:DEBUG] ${message}`, data || "")
+    }
+  },
 }
 
 /**
@@ -85,21 +94,35 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
     }
   }
 
-  // Get currently loaded/active models from LM Studio
+  // Get currently loaded/active models from LM Studio with caching
   async function getLoadedModels(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<string[]> {
-    try {
-      const url = `${baseURL}${LM_STUDIO_MODELS_ENDPOINT}`
-      const response = await fetch(url, {
-        method: "GET",
-        signal: AbortSignal.timeout(2000),
-      })
-      if (!response.ok) return []
-      
-      const data = (await response.json()) as LMStudioModelsResponse
-      return data.data?.map(model => model.id) || []
-    } catch {
-      return []
-    }
+    return modelStatusCache.getModels(baseURL, async () => {
+      try {
+        const url = `${baseURL}${LM_STUDIO_MODELS_ENDPOINT}`
+        const response = await fetch(url, {
+          method: "GET",
+          signal: AbortSignal.timeout(2000),
+        })
+        if (!response.ok) return []
+        
+        const data = (await response.json()) as LMStudioModelsResponse
+        const models = data.data?.map(model => model.id) || []
+        
+        log.debug("Fresh model data from LM Studio", { 
+          baseURL, 
+          modelCount: models.length,
+          models: models.slice(0, 3) // Log first 3 for debugging
+        })
+        
+        return models
+      } catch (error) {
+        log.warn("Failed to fetch model data", { 
+          baseURL, 
+          error: error instanceof Error ? error.message : String(error) 
+        })
+        return []
+      }
+    })
   }
 
   // Categorize models by type
@@ -328,6 +351,142 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
     return suggestions
   }
 
+  // Model Status Cache for reducing API calls
+  class ModelStatusCache {
+    private cache = new Map<string, {
+      models: string[]
+      timestamp: number
+      ttl: number
+    }>()
+    
+    private readonly DEFAULT_TTL = 30000 // 30 seconds
+    private readonly MAX_CACHE_SIZE = 50 // Prevent memory leaks
+    
+    // Get cached model status or fetch fresh data
+    async getModels(baseURL: string, fetchFn: () => Promise<string[]>): Promise<string[]> {
+      const now = Date.now()
+      const cached = this.cache.get(baseURL)
+      
+      // Return cached data if still valid
+      if (cached && (now - cached.timestamp) < cached.ttl) {
+        log.debug("Using cached model status", { 
+          baseURL, 
+          age: now - cached.timestamp,
+          ttl: cached.ttl,
+          modelCount: cached.models.length 
+        })
+        return cached.models
+      }
+      
+      // Fetch fresh data
+      try {
+        const models = await fetchFn()
+        
+        // Update cache with new data
+        this.cache.set(baseURL, {
+          models: [...models], // Create copy to prevent mutations
+          timestamp: now,
+          ttl: this.DEFAULT_TTL
+        })
+        
+        // Prevent cache from growing too large
+        if (this.cache.size > this.MAX_CACHE_SIZE) {
+          this.cleanup()
+        }
+        
+        log.debug("Updated model status cache", { 
+          baseURL, 
+          modelCount: models.length,
+          cacheSize: this.cache.size 
+        })
+        
+        return models
+      } catch (error) {
+        // If we have stale cached data, return it as fallback
+        if (cached) {
+          log.warn("Using stale cache data due to fetch error", { 
+            baseURL, 
+            age: now - cached.timestamp,
+            error: error instanceof Error ? error.message : String(error) 
+          })
+          return cached.models
+        }
+        throw error
+      }
+    }
+    
+    // Invalidate cache for specific URL
+    invalidate(baseURL: string): void {
+      this.cache.delete(baseURL)
+      log.debug("Invalidated cache entry", { baseURL })
+    }
+    
+    // Invalidate entire cache
+    invalidateAll(): void {
+      const size = this.cache.size
+      this.cache.clear()
+      log.debug("Cleared entire cache", { previousSize: size })
+    }
+    
+    // Force refresh for specific URL (useful after model changes)
+    async forceRefresh(baseURL: string, fetchFn: () => Promise<string[]>): Promise<string[]> {
+      this.invalidate(baseURL)
+      return this.getModels(baseURL, fetchFn)
+    }
+    
+    // Get cache statistics
+    getStats(): { size: number; entries: Array<{ baseURL: string; age: number; modelCount: number; ttl: number }> } {
+      const now = Date.now()
+      return {
+        size: this.cache.size,
+        entries: Array.from(this.cache.entries()).map(([baseURL, data]) => ({
+          baseURL,
+          age: now - data.timestamp,
+          modelCount: data.models.length,
+          ttl: data.ttl
+        }))
+      }
+    }
+    
+    // Cleanup old entries to prevent memory leaks
+    private cleanup(): void {
+      const now = Date.now()
+      const toDelete: string[] = []
+      
+      for (const [baseURL, data] of this.cache.entries()) {
+        // Delete entries older than 5x TTL or if cache is too large
+        if (now - data.timestamp > data.ttl * 5 || this.cache.size > this.MAX_CACHE_SIZE) {
+          toDelete.push(baseURL)
+        }
+      }
+      
+      toDelete.forEach(baseURL => this.cache.delete(baseURL))
+      
+      if (toDelete.length > 0) {
+        log.debug("Cleaned up cache entries", { deleted: toDelete.length, remaining: this.cache.size })
+      }
+    }
+    
+    // Configure TTL for specific use cases
+    setTTL(baseURL: string, ttl: number): void {
+      const cached = this.cache.get(baseURL)
+      if (cached) {
+        cached.ttl = ttl
+        log.debug("Updated TTL for cache entry", { baseURL, ttl })
+      }
+    }
+    
+    // Check if cache entry exists and is valid
+    isValid(baseURL: string): boolean {
+      const cached = this.cache.get(baseURL)
+      const now = Date.now()
+      return cached !== undefined && (now - cached.timestamp) < cached.ttl
+    }
+  }
+
+  // Global cache instance
+  const modelStatusCache = new ModelStatusCache()
+
   // Auto-detect LM Studio if not configured
   async function autoDetectLMStudio(): Promise<string | null> {
     const commonPorts = [1234, 8080, 11434]
@@ -469,6 +628,24 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
         ]
       })
     }
+    
+    // Warm up the cache with current model status
+    try {
+      log.info("Warming up model status cache", { baseURL: normalizedBaseURL })
+      await modelStatusCache.getModels(normalizedBaseURL, async () => {
+        // This will trigger a fresh fetch and cache population
+        return await discoverLMStudioModels(normalizedBaseURL).then(models => models.map(m => m.id))
+      })
+      log.info("Cache warming completed", { 
+        baseURL: normalizedBaseURL,
+        cacheSize: modelStatusCache.getStats().size 
+      })
+    } catch (error) {
+      log.warn("Failed to warm up cache", { 
+        baseURL: normalizedBaseURL,
+        error: error instanceof Error ? error.message : String(error) 
+      })
+    }
   }
 
   return {
@@ -572,13 +749,24 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
             model: item.model,
             similarity: Math.round(item.similarity * 100),
             reason: item.reason
-          }))
+          })),
+          cacheInfo: {
+            age: 0, // Will be filled below
+            valid: false,
+            totalCacheEntries: modelStatusCache.getStats().size
+          }
         }
       } else {
+        const cacheStats = modelStatusCache.getStats()
+        const cacheEntry = cacheStats.entries.find(entry => entry.baseURL === baseURL)
+        const cacheAge = cacheEntry ? cacheEntry.age : 0
+        
         log.info("Model validation successful", { 
           sessionID,
           model: model.id,
           totalAvailable: validation.result?.length || 0,
+          cacheAge,
+          cacheValid: modelStatusCache.isValid(baseURL),
           retries: validation.success ? 0 : 1
         })
         
@@ -587,8 +775,15 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
           model: model.id,
           availableModels: validation.result || [],
           message: `Model '${model.id}' is loaded and ready.`,
+          cacheInfo: {
+            age: cacheAge,
+            valid: modelStatusCache.isValid(baseURL),
+            totalCacheEntries: cacheStats.size
+          },
           performanceHint: validation.result && validation.result.length > 1 
             ? `Note: ${validation.result.length} models loaded. Consider unloading unused models for better performance.` 
+            : cacheAge > 20000 // Cache is getting old
+            ? `Cache is ${Math.round(cacheAge/1000)}s old. Consider refreshing if model status seems outdated.`
             : undefined
         }
       }
