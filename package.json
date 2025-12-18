@@ -44,8 +44,8 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^1.0.0",
-    "@vitest/coverage-v8": "^1.0.0",
+    "vitest": "^4.0.16",
+    "@vitest/coverage-v8": "^4.0.16",
     "eslint": "^8.0.0"
   },
   "peerDependencies": {
