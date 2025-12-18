@@ -272,40 +272,7 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
       }
     },
 
-    // Key hook: Called right before model execution - perfect for preloading!
-    "chat.params": async (input, output) => {
-      const { model, provider } = input
-      
-      // Only handle LM Studio provider
-      if (provider.id !== "lmstudio") {
-        return
-      }
 
-      const modelKey = `${provider.id}/${model.id}`
-      log.info("LM Studio model about to be used", { model: modelKey })
-      
-      // Check if model is actually loaded in LM Studio
-      const loadedModels = await getLoadedModels(provider.options?.baseURL?.replace('/v1', '') || DEFAULT_LM_STUDIO_URL)
-      const isModelLoaded = loadedModels.includes(model.id)
-      
-      if (!isModelLoaded) {
-        log.warn("Model not loaded in LM Studio", { 
-          model: model.id,
-          loadedModels,
-          suggestion: "Load this model in LM Studio UI first"
-        })
-        
-        // Try to provide helpful guidance through the options
-        output.options.lmstudioNotLoaded = {
-          model: model.id,
-          availableModels: loadedModels,
-          message: `Model '${model.id}' needs to be loaded in LM Studio first. Available models: ${loadedModels.join(', ')}`
-        }
-      } else {
-        log.info("Model is loaded and ready", { model: model.id })
-        output.options.lmstudioReady = true
-      }
-    },
   }
 }
 
