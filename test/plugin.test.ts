@@ -25,7 +25,7 @@ describe('LMStudio Plugin', () => {
     // Mock client
     mockClient = {
       tui: {
-        showToast: vi.fn().mockResolvedValue(undefined)
+        showToast: vi.fn().mockResolvedValue(true)
       }
     }
     
@@ -263,8 +263,10 @@ describe('LMStudio Plugin', () => {
       await pluginHooks['chat.params'](input, output)
 
       expect(mockClient.tui.showToast).toHaveBeenCalledWith(expect.objectContaining({
-        variant: 'success',
-        message: 'Model \'test-model\' is ready to use'
+        body: expect.objectContaining({
+          variant: 'success',
+          message: 'Model \'test-model\' is ready to use'
+        })
       }))
       expect(output.options?.lmstudioValidation).toEqual(expect.objectContaining({
         status: 'success',
@@ -293,8 +295,10 @@ describe('LMStudio Plugin', () => {
       await pluginHooks['chat.params'](input, output)
 
       expect(mockClient.tui.showToast).toHaveBeenCalledWith(expect.objectContaining({
-        variant: 'error',
-        message: expect.stringContaining('not ready')
+        body: expect.objectContaining({
+          variant: 'error',
+          message: expect.stringContaining('not ready')
+        })
       }))
       expect(output.options?.lmstudioValidation).toEqual(expect.objectContaining({
         status: 'error',
