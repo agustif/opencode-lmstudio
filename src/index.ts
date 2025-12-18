@@ -483,6 +483,69 @@ export const LMStudioPlugin: Plugin = async ({ $, directory }) => {
       }
     },
 
+    // Validate model availability before each request
+    "chat.params": async (input, output) => {
+      const { sessionID, agent, model, provider, message } = input
+      
+      // Only handle LM Studio provider
+      if (provider.info.id !== "lmstudio") {
+        return
+      }
+
+      log.info("LM Studio model about to be used", { 
+        sessionID, 
+        agent, 
+        modelID: model.id,
+        providerID: provider.info.id 
+      })
+      
+      // Check if model is actually loaded in LM Studio
+      const baseURL = provider.options?.baseURL?.replace('/v1', '') || DEFAULT_LM_STUDIO_URL
+      const loadedModels = await getLoadedModels(baseURL)
+      const isModelLoaded = loadedModels.includes(model.id)
+      
+      if (!isModelLoaded) {
+        log.warn("Model not loaded in LM Studio", { 
+          sessionID,
+          model: model.id,
+          loadedModels,
+          baseURL,
+          suggestion: "Load this model in LM Studio UI first"
+        })
+        
+        // Provide helpful error message through options
+        output.options.lmstudioValidation = {
+          status: "error",
+          model: model.id,
+          availableModels: loadedModels,
+          message: `Model '${model.id}' is not loaded in LM Studio. Please load it in the LM Studio UI first.`,
+          steps: [
+            "1. Open LM Studio application",
+            "2. Find the model in your models list",
+            "3. Click 'Load Model' to activate it",
+            "4. Ensure the server is running",
+            "5. Try your request again"
+          ],
+          similarModels: loadedModels.filter(m => 
+            m.toLowerCase().includes(model.id.split('-')[0].toLowerCase()) ||
+            model.id.toLowerCase().includes(m.split('-')[0].toLowerCase())
+          )
+        }
+      } else {
+        log.info("Model is loaded and ready", { 
+          sessionID,
+          model: model.id,
+          totalAvailable: loadedModels.length 
+        })
+        
+        output.options.lmstudioValidation = {
+          status: "success",
+          model: model.id,
+          availableModels: loadedModels,
+          message: `Model '${model.id}' is loaded and ready.`
+        }
+      }
+    },
 
   }
 }
