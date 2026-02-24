@@ -3,10 +3,11 @@ export function isPluginHookInput(input: any): input is { sessionID?: string; ag
 }
 
 export function isLMStudioProvider(provider: any): boolean {
-  return provider && 
-         typeof provider === 'object' && 
-         provider.info && 
-         provider.info.id === 'lmstudio'
+  return provider &&
+         typeof provider === 'object' &&
+         provider.info &&
+         typeof provider.info.id === 'string' &&
+         /^lm.?studio/i.test(provider.info.id)
 }
 
 export function isValidModel(model: any): model is { id: string; [key: string]: any } {

@@ -19,8 +19,8 @@ describe('LMStudio Plugin', () => {
   let pluginHooks: any
 
   beforeEach(async () => {
-    // Reset fetch mock
-    mockFetch.mockClear()
+    // Reset fetch mock (mockReset clears calls + queued responses + implementation)
+    mockFetch.mockReset()
     
     // Mock client
     mockClient = {
@@ -175,6 +175,50 @@ describe('LMStudio Plugin', () => {
           id: 'new-model',
           name: 'New Model'
         })
+      })
+    })
+
+    it('should discover models from multiple lm-studio providers', async () => {
+      // Route mock responses by URL so the test is resilient to call ordering
+      mockFetch.mockImplementation(async (url: string) => {
+        if (typeof url === 'string' && url.includes('wooden.local')) {
+          return {
+            ok: true,
+            json: async () => ({
+              data: [{ id: 'wooden-model', object: 'model', created: 1234567890, owned_by: 'local' }]
+            })
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            data: [{ id: 'local-model', object: 'model', created: 1234567890, owned_by: 'local' }]
+          })
+        }
+      })
+
+      const config: any = {
+        provider: {
+          'lm-studio': {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: { baseURL: 'http://127.0.0.1:1234/v1' },
+          },
+          'lm-studio-wooden': {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (wooden)',
+            options: { baseURL: 'http://wooden.local:1234/v1' },
+          },
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider['lm-studio'].models).toMatchObject({
+        'local-model': expect.objectContaining({ id: 'local-model' })
+      })
+      expect(config.provider['lm-studio-wooden'].models).toMatchObject({
+        'wooden-model': expect.objectContaining({ id: 'wooden-model' })
       })
     })
 
