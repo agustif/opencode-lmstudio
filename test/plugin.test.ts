@@ -181,11 +181,11 @@ describe('LMStudio Plugin', () => {
     it('should discover models from multiple lm-studio providers', async () => {
       // Route mock responses by URL so the test is resilient to call ordering
       mockFetch.mockImplementation(async (url: string) => {
-        if (typeof url === 'string' && url.includes('wooden.local')) {
+        if (typeof url === 'string' && url.includes('192.168.1.100')) {
           return {
             ok: true,
             json: async () => ({
-              data: [{ id: 'wooden-model', object: 'model', created: 1234567890, owned_by: 'local' }]
+              data: [{ id: 'remote-model', object: 'model', created: 1234567890, owned_by: 'local' }]
             })
           }
         }
@@ -204,10 +204,10 @@ describe('LMStudio Plugin', () => {
             name: 'LM Studio (local)',
             options: { baseURL: 'http://127.0.0.1:1234/v1' },
           },
-          'lm-studio-wooden': {
+          'lm-studio-remote': {
             npm: '@ai-sdk/openai-compatible',
-            name: 'LM Studio (wooden)',
-            options: { baseURL: 'http://wooden.local:1234/v1' },
+            name: 'LM Studio (remote)',
+            options: { baseURL: 'http://192.168.1.100:1234/v1' },
           },
         }
       }
@@ -217,8 +217,8 @@ describe('LMStudio Plugin', () => {
       expect(config.provider['lm-studio'].models).toMatchObject({
         'local-model': expect.objectContaining({ id: 'local-model' })
       })
-      expect(config.provider['lm-studio-wooden'].models).toMatchObject({
-        'wooden-model': expect.objectContaining({ id: 'wooden-model' })
+      expect(config.provider['lm-studio-remote'].models).toMatchObject({
+        'remote-model': expect.objectContaining({ id: 'remote-model' })
       })
     })
 

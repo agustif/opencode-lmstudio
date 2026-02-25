@@ -8,7 +8,7 @@ import type { LMStudioModel } from '../types'
 const modelStatusCache = new ModelStatusCache()
 
 // Match any provider key that looks like an LM Studio instance:
-// lmstudio, lm-studio, lmstudio-wooden, lm-studio-alienware, etc.
+// lmstudio, lm-studio, lmstudio-remote, lm-studio-workstation, etc.
 const LM_STUDIO_KEY_RE = /^lm.?studio/i
 
 export function isLMStudioProviderKey(key: string): boolean {
