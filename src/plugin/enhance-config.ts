@@ -71,8 +71,11 @@ async function processHost(
     }
 
     if (!existingModels[modelKey] && !existingModels[model.id]) {
-      const modelType = categorizeModel(model.id)
-      const owner = extractModelOwner(model.id)
+      // Prefer API-provided type over name-based heuristic
+      const isEmbedding = model.type === 'embeddings' || categorizeModel(model.id) === 'embedding'
+      const owner = model.publisher || extractModelOwner(model.id)
+      const contextLength = model.loaded_context_length ?? model.max_context_length
+
       const modelConfig: any = {
         id: model.id,
         name: formatModelName(model),
@@ -82,12 +85,23 @@ async function processHost(
         modelConfig.organizationOwner = owner
       }
 
-      if (modelType === 'embedding') {
+      if (contextLength) {
+        modelConfig.limit = {
+          context: contextLength,
+          // LM Studio doesn't expose a max output token limit, so estimate as 25% of context
+          output: Math.floor(contextLength * 0.25),
+        }
+      }
+
+      if (isEmbedding) {
         embeddingModelsCount++
         modelConfig.modalities = { input: ["text"], output: ["embedding"] }
-      } else if (modelType === 'chat') {
+      } else {
         chatModelsCount++
         modelConfig.modalities = { input: ["text", "image"], output: ["text"] }
+        if (model.capabilities?.includes('tool_use')) {
+          modelConfig.tool_call = true
+        }
       }
 
       discoveredModels[modelKey] = modelConfig

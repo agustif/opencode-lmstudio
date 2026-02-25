@@ -1,7 +1,8 @@
 import type { LMStudioModel, LMStudioModelsResponse } from '../types'
 
 const DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
-const LM_STUDIO_MODELS_ENDPOINT = "/v1/models"
+const LM_STUDIO_MODELS_ENDPOINT = "/api/v0/models"
+const LM_STUDIO_HEALTH_ENDPOINT = "/v1/models"
 
 // Normalize base URL to ensure consistent format
 export function normalizeBaseURL(baseURL: string = DEFAULT_LM_STUDIO_URL): string {
@@ -25,7 +26,7 @@ export function buildAPIURL(baseURL: string, endpoint: string = LM_STUDIO_MODELS
 // Check if LM Studio is accessible
 export async function checkLMStudioHealth(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<boolean> {
   try {
-    const url = buildAPIURL(baseURL)
+    const url = buildAPIURL(baseURL, LM_STUDIO_HEALTH_ENDPOINT)
     const response = await fetch(url, {
       method: "GET",
       signal: AbortSignal.timeout(3000),

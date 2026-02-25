@@ -2,8 +2,18 @@
 export interface LMStudioModel {
   id: string
   object: string
-  created: number
-  owned_by: string
+  created?: number
+  owned_by?: string
+  // Fields from /api/v0/models (LM Studio extended API)
+  type?: 'llm' | 'vlm' | 'embeddings'
+  publisher?: string
+  arch?: string
+  compatibility_type?: string
+  quantization?: string
+  state?: 'loaded' | 'not-loaded'
+  max_context_length?: number
+  loaded_context_length?: number
+  capabilities?: string[]
 }
 
 export interface LMStudioModelsResponse {
