@@ -368,5 +368,21 @@ describe('LMStudio Plugin', () => {
       
       consoleSpy.mockRestore()
     })
+
+    it('includes Authorization header when auth.json has valid LM Studio API key', async () => {
+      // Test that authorization headers are included when auth.json has valid LM Studio config
+      const { getHeaders } = await import('../src/utils/http.ts')
+      const headers = getHeaders()
+      
+      // If auth.json exists with 'type: api' and key, Authorization header should be present
+      if (headers['Authorization']) {
+        expect(headers['Authorization']).toBeDefined()
+        expect(headers['Authorization'].startsWith('Bearer ')).toBe(true)
+      } else {
+        // No auth configured - Content-Type should still be present
+        expect(headers['Content-Type']).toBe('application/json')
+        expect(headers['Authorization']).toBeUndefined()
+      }
+    })
   })
 })

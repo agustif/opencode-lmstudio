@@ -1,4 +1,5 @@
 import type { LMStudioModel, LMStudioModelsResponse } from '../types'
+import { getHeaders } from './http'
 
 const DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
 const LM_STUDIO_MODELS_ENDPOINT = "/v1/models"
@@ -26,8 +27,10 @@ export function buildAPIURL(baseURL: string, endpoint: string = LM_STUDIO_MODELS
 export async function checkLMStudioHealth(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<boolean> {
   try {
     const url = buildAPIURL(baseURL)
+    const headers = getHeaders()
     const response = await fetch(url, {
       method: "GET",
+      headers: headers,
       signal: AbortSignal.timeout(3000),
     })
     return response.ok
@@ -40,11 +43,10 @@ export async function checkLMStudioHealth(baseURL: string = DEFAULT_LM_STUDIO_UR
 export async function discoverLMStudioModels(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<LMStudioModel[]> {
   try {
     const url = buildAPIURL(baseURL)
+    const headers = getHeaders()
     const response = await fetch(url, {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: headers,
       signal: AbortSignal.timeout(3000),
     })
 
@@ -63,8 +65,10 @@ export async function discoverLMStudioModels(baseURL: string = DEFAULT_LM_STUDIO
 export async function fetchModelsDirect(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<string[]> {
   try {
     const url = buildAPIURL(baseURL)
+    const headers = getHeaders()
     const response = await fetch(url, {
       method: "GET",
+      headers: headers,
       signal: AbortSignal.timeout(3000),
     })
     if (!response.ok) {

@@ -1,5 +1,5 @@
 import type { ModelValidationError, AutoFixSuggestion, SimilarModel } from '../types'
-
+export { getLMStudioAuth, getHeaders } from './http'
 export { formatModelName, extractModelOwner } from './format-model-name'
 
 // Categorize models by type
@@ -144,9 +144,9 @@ export function categorizeError(error: any, context: { baseURL: string; modelId:
     return {
       type: 'permission',
       severity: 'high',
-      message: `Authentication or permission issue with LM Studio. Check your configuration.`,
+      message: `Authentication required by LM Studio server. Please configure LM Studio API key in OpenCode auth settings.`,
       canRetry: false,
-      autoFixAvailable: false
+      autoFixAvailable: true
     }
   }
   
@@ -209,6 +209,21 @@ export function generateAutoFixSuggestions(errorCategory: ModelValidationError):
           "2. Increase request timeout in OpenCode settings",
           "3. Close other applications to free up system resources"
         ],
+        automated: false
+      })
+      break
+      
+    case 'permission':
+      suggestions.push({
+        action: "Configure LM Studio API key in OpenCode",
+        steps: [
+          "1. Open opencode settings",
+          "2. Navigate to LM Studio authentication section",
+          "3. Enter your LM Studio API key (type: 'api')",
+          "4. Restart the plugin",
+          "5. The auth.json file will be updated automatically"
+        ],
+        command: "opencode auth set lmstudio type=api",
         automated: false
       })
       break
