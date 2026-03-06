@@ -140,13 +140,13 @@ export function categorizeError(error: any, context: { baseURL: string; modelId:
   }
   
   // Permission issues
-  if (errorStr.includes('401') || errorStr.includes('403') || errorStr.includes('unauthorized')) {
+  if (errorStr.includes('401') || errorStr.includes('403') || errorStr.includes('unauthorized') || errorStr.includes('An LM Studio API token is required') || errorStr.includes('Malformed LM Studio API token provided')) {
     return {
       type: 'permission',
       severity: 'high',
       message: `Authentication required by LM Studio server. Please configure LM Studio API key in OpenCode auth settings.`,
       canRetry: false,
-      autoFixAvailable: true
+      autoFixAvailable: false
     }
   }
   
@@ -217,13 +217,13 @@ export function generateAutoFixSuggestions(errorCategory: ModelValidationError):
       suggestions.push({
         action: "Configure LM Studio API key in OpenCode",
         steps: [
-          "1. Open opencode settings",
-          "2. Navigate to LM Studio authentication section",
-          "3. Enter your LM Studio API key (type: 'api')",
-          "4. Restart the plugin",
-          "5. The auth.json file will be updated automatically"
+          "1. Open an opencode session",
+          "2. Run the command: /connect",
+          "3. Find and select 'LM Studio' from the list of providers",
+          "4. Enter your LM Studio API key and submit (found in LM Studio under Local Server > Server Settings > Manage Tokens)",
+          "5. Restart the opencode session",
+          "6. The auth.json file will be updated automatically"
         ],
-        command: "opencode auth set lmstudio type=api",
         automated: false
       })
       break
