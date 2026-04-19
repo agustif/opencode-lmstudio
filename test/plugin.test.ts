@@ -20,7 +20,7 @@ describe('LMStudio Plugin', () => {
 
   beforeEach(async () => {
     // Reset fetch mock
-    mockFetch.mockClear()
+    mockFetch.mockReset()
     
     // Mock client
     mockClient = {
@@ -125,7 +125,22 @@ describe('LMStudio Plugin', () => {
         ok: true
       })
 
-      // Mock models response
+      // Mock api/v1 unavailable, api/v0 success, cache warm success
+      mockFetch.mockResolvedValueOnce({
+        ok: false
+      })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'test-model-1', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'test-model-2', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+      mockFetch.mockResolvedValueOnce({
+        ok: false
+      })
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -176,6 +191,83 @@ describe('LMStudio Plugin', () => {
           name: 'New Model'
         })
       })
+    })
+
+    it('should include context limits and capabilities from LM Studio metadata', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            models: [
+              {
+                key: 'qwen3.6-35b-a3b',
+                display_name: 'Qwen3.6 35B A3B UD',
+                type: 'vlm',
+                max_context_length: 262144,
+                capabilities: {
+                  vision: true,
+                  trained_for_tool_use: true
+                },
+                loaded_instances: [
+                  {
+                    id: 'qwen3.6-35b-a3b',
+                    config: {
+                      context_length: 131072
+                    }
+                  }
+                ]
+              }
+            ]
+          })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            models: [
+              {
+                key: 'qwen3.6-35b-a3b',
+                display_name: 'Qwen3.6 35B A3B UD',
+                type: 'vlm',
+                max_context_length: 262144,
+                capabilities: {
+                  vision: true,
+                  trained_for_tool_use: true
+                }
+              }
+            ]
+          })
+        })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: { baseURL: 'http://127.0.0.1:1234/v1' },
+            models: {}
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider.lmstudio.models['qwen3_6-35b-a3b']).toEqual(
+        expect.objectContaining({
+          id: 'qwen3.6-35b-a3b',
+          name: 'Qwen3.6 35B A3B UD',
+          toolCall: true,
+          limit: {
+            context: 131072
+          },
+          modalities: {
+            input: ['text', 'image'],
+            output: ['text']
+          }
+        })
+      )
     })
 
     it('should handle LM Studio offline gracefully', async () => {

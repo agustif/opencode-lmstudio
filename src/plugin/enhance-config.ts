@@ -7,6 +7,26 @@ import type { LMStudioModel } from '../types'
 
 const modelStatusCache = new ModelStatusCache()
 
+function supportsVisionInput(model: LMStudioModel): boolean {
+  if (typeof model.capabilities === 'object' && model.capabilities !== null && !Array.isArray(model.capabilities)) {
+    return Boolean(model.capabilities.vision)
+  }
+
+  return model.type === 'vlm'
+}
+
+function supportsToolCall(model: LMStudioModel): boolean {
+  if (Array.isArray(model.capabilities)) {
+    return model.capabilities.includes('tool_use')
+  }
+
+  if (typeof model.capabilities === 'object' && model.capabilities !== null) {
+    return Boolean(model.capabilities.trained_for_tool_use)
+  }
+
+  return false
+}
+
 export async function enhanceConfig(
   config: any,
   _client: PluginInput['client'], // client not used but kept for interface compatibility
@@ -82,6 +102,13 @@ export async function enhanceConfig(
             id: model.id,
             name: formatModelName(model),
           }
+
+          const contextLength = model.loaded_context_length ?? model.max_context_length
+          if (contextLength) {
+            modelConfig.limit = {
+              context: contextLength,
+            }
+          }
           
           // Add owner if available
           if (owner) {
@@ -98,9 +125,13 @@ export async function enhanceConfig(
           } else if (modelType === 'chat') {
             chatModelsCount++
             modelConfig.modalities = {
-              input: ["text", "image"],
+              input: supportsVisionInput(model) ? ["text", "image"] : ["text"],
               output: ["text"]
             }
+          }
+
+          if (supportsToolCall(model)) {
+            modelConfig.toolCall = true
           }
 
           discoveredModels[modelKey] = modelConfig
@@ -153,4 +184,3 @@ export async function enhanceConfig(
     toastNotifier.warning("Plugin configuration failed", "Configuration Error").catch(() => {})
   }
 }
-

@@ -16,6 +16,10 @@ export function extractModelOwner(modelId: string): string | undefined {
  * Creates readable titles like "Qwen3 30B A3B" instead of "qwen/qwen3-30b-a3b"
  */
 export function formatModelName(model: LMStudioModel): string {
+  if (model.display_name) {
+    return model.display_name
+  }
+
   const { id } = model
   
   // Extract parts from model ID
@@ -60,4 +64,3 @@ export function formatModelName(model: LMStudioModel): string {
   
   return tokens
 }
-

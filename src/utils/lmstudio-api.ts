@@ -1,7 +1,14 @@
-import type { LMStudioModel, LMStudioModelsResponse } from '../types'
+import type {
+  LMStudioAPIV1Model,
+  LMStudioAPIV1ModelsResponse,
+  LMStudioModel,
+  LMStudioModelsResponse,
+} from '../types'
 
 const DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
 const LM_STUDIO_MODELS_ENDPOINT = "/v1/models"
+const LM_STUDIO_MODELS_ENDPOINT_API_V0 = "/api/v0/models"
+const LM_STUDIO_MODELS_ENDPOINT_API_V1 = "/api/v1/models"
 
 // Normalize base URL to ensure consistent format
 export function normalizeBaseURL(baseURL: string = DEFAULT_LM_STUDIO_URL): string {
@@ -22,6 +29,42 @@ export function buildAPIURL(baseURL: string, endpoint: string = LM_STUDIO_MODELS
   return `${normalized}${endpoint}`
 }
 
+function resolveLoadedContextLength(model: LMStudioAPIV1Model): number | undefined {
+  return model.loaded_instances?.find(instance => instance?.config?.context_length)?.config?.context_length
+}
+
+function normalizeAPIV1Model(model: LMStudioAPIV1Model): LMStudioModel {
+  return {
+    id: model.key,
+    object: "model",
+    display_name: model.display_name,
+    type: model.type,
+    publisher: model.publisher,
+    arch: model.architecture,
+    compatibility_type: model.format,
+    max_context_length: model.max_context_length,
+    loaded_context_length: resolveLoadedContextLength(model),
+    capabilities: model.capabilities,
+    loaded_instances: model.loaded_instances,
+  }
+}
+
+async function fetchJSON<T>(url: string): Promise<T | null> {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    signal: AbortSignal.timeout(3000),
+  })
+
+  if (!response.ok) {
+    return null
+  }
+
+  return (await response.json()) as T
+}
+
 // Check if LM Studio is accessible
 export async function checkLMStudioHealth(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<boolean> {
   try {
@@ -39,21 +82,22 @@ export async function checkLMStudioHealth(baseURL: string = DEFAULT_LM_STUDIO_UR
 // Discover models from LM Studio API
 export async function discoverLMStudioModels(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<LMStudioModel[]> {
   try {
-    const url = buildAPIURL(baseURL)
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(3000),
-    })
-
-    if (!response.ok) {
-      return []
+    const apiV1Data = await fetchJSON<LMStudioAPIV1ModelsResponse>(
+      buildAPIURL(baseURL, LM_STUDIO_MODELS_ENDPOINT_API_V1)
+    )
+    if (apiV1Data?.models?.length) {
+      return apiV1Data.models.map(normalizeAPIV1Model)
     }
 
-    const data = (await response.json()) as LMStudioModelsResponse
-    return data.data ?? []
+    const apiV0Data = await fetchJSON<LMStudioModelsResponse>(
+      buildAPIURL(baseURL, LM_STUDIO_MODELS_ENDPOINT_API_V0)
+    )
+    if (apiV0Data?.data?.length) {
+      return apiV0Data.data
+    }
+
+    const openAIData = await fetchJSON<LMStudioModelsResponse>(buildAPIURL(baseURL))
+    return openAIData?.data ?? []
   } catch (error) {
     throw new Error(`Failed to discover models: ${error instanceof Error ? error.message : String(error)}`)
   }

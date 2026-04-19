@@ -2,13 +2,54 @@
 export interface LMStudioModel {
   id: string
   object: string
-  created: number
-  owned_by: string
+  created?: number
+  owned_by?: string
+  display_name?: string
+  type?: string
+  publisher?: string
+  arch?: string
+  compatibility_type?: string
+  max_context_length?: number
+  loaded_context_length?: number
+  capabilities?: string[] | {
+    vision?: boolean
+    trained_for_tool_use?: boolean
+  }
+  loaded_instances?: Array<{
+    id?: string
+    config?: {
+      context_length?: number
+    }
+  }>
 }
 
 export interface LMStudioModelsResponse {
   object: string
   data: LMStudioModel[]
+}
+
+export interface LMStudioAPIV1Model {
+  type?: string
+  publisher?: string
+  key: string
+  display_name?: string
+  architecture?: string
+  format?: string
+  max_context_length?: number
+  capabilities?: {
+    vision?: boolean
+    trained_for_tool_use?: boolean
+  }
+  loaded_instances?: Array<{
+    id?: string
+    config?: {
+      context_length?: number
+    }
+  }>
+}
+
+export interface LMStudioAPIV1ModelsResponse {
+  models?: LMStudioAPIV1Model[]
 }
 
 export type ModelType = 'chat' | 'embedding' | 'unknown'
