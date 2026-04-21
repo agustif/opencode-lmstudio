@@ -5,7 +5,8 @@ OpenCode plugin for enhanced LM Studio support with auto-detection and dynamic m
 ## Features
 
 - **Auto-detection**: Automatically detects LM Studio running on common ports (1234, 8080, 11434)
-- **Dynamic Model Discovery**: Queries LM Studio's `/v1/models` endpoint to discover available models
+- **Dynamic Model Discovery**: Queries LM Studio's `/api/v0/models` endpoint (fallback: `/v1/models`) to discover available models
+- **Context Length Discovery**: Reads `loaded_context_length` / `max_context_length` from LM Studio and exposes them as `limit.context`, enabling OpenCode features like auto-compaction
 - **Smart Model Formatting**: Automatically formats model names for better readability (e.g., "Qwen3 30B A3B" instead of "qwen/qwen3-30b-a3b")
 - **Organization Owner Extraction**: Extracts and sets `organizationOwner` field from model IDs
 - **Health Check Monitoring**: Verifies LM Studio is accessible before attempting operations
@@ -82,8 +83,8 @@ The plugin will automatically discover and add any additional models available i
 1. On OpenCode startup, the plugin's `config` hook is called
 2. If an `lmstudio` provider is found, it checks if LM Studio is accessible
 3. If not configured, it attempts to auto-detect LM Studio on common ports
-4. If accessible, it queries the `/v1/models` endpoint
-5. Discovered models are merged into your configuration
+4. If accessible, it queries `/api/v0/models` for rich metadata (context length, model type, publisher), falling back to `/v1/models` on older LM Studio versions (< 0.3.5)
+5. Discovered models are merged into your configuration, including `limit.context` when available — this lets OpenCode enable auto-compaction based on the context window actually configured in LM Studio
 6. The enhanced configuration is used for the current session
 
 ## Requirements

@@ -11,6 +11,24 @@ export interface LMStudioModelsResponse {
   data: LMStudioModel[]
 }
 
+export interface LMStudioModelV0 {
+  id: string
+  object: string
+  type: 'llm' | 'vlm' | 'embeddings'
+  publisher: string
+  arch: string
+  compatibility_type: string
+  quantization: string
+  state: 'loaded' | 'not-loaded' | 'loading'
+  max_context_length: number
+  loaded_context_length?: number
+}
+
+export interface LMStudioModelsV0Response {
+  object: 'list'
+  data: LMStudioModelV0[]
+}
+
 export type ModelType = 'chat' | 'embedding' | 'unknown'
 
 export type LoadingStatus = 'not_loaded' | 'loading' | 'loaded' | 'error'

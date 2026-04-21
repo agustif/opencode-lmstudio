@@ -1,7 +1,8 @@
-import type { LMStudioModel, LMStudioModelsResponse } from '../types'
+import type { LMStudioModel, LMStudioModelsResponse, LMStudioModelV0, LMStudioModelsV0Response } from '../types'
 
 const DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
 const LM_STUDIO_MODELS_ENDPOINT = "/v1/models"
+const LM_STUDIO_MODELS_V0_ENDPOINT = "/api/v0/models"
 
 // Normalize base URL to ensure consistent format
 export function normalizeBaseURL(baseURL: string = DEFAULT_LM_STUDIO_URL): string {
@@ -57,6 +58,29 @@ export async function discoverLMStudioModels(baseURL: string = DEFAULT_LM_STUDIO
   } catch (error) {
     throw new Error(`Failed to discover models: ${error instanceof Error ? error.message : String(error)}`)
   }
+}
+
+// Returns null on 404 so callers can fall back to /v1/models on older LMStudio versions
+export async function discoverLMStudioModelsV0(baseURL: string = DEFAULT_LM_STUDIO_URL): Promise<LMStudioModelV0[] | null> {
+  const url = buildAPIURL(baseURL, LM_STUDIO_MODELS_V0_ENDPOINT)
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    signal: AbortSignal.timeout(3000),
+  })
+
+  if (response.status === 404) {
+    return null
+  }
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const data = (await response.json()) as LMStudioModelsV0Response
+  return data.data ?? []
 }
 
 // Get currently loaded/active models from LM Studio (bypass cache)

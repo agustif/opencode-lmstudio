@@ -178,6 +178,142 @@ describe('LMStudio Plugin', () => {
       })
     })
 
+    it('should extract context length from /api/v0/models into limit.context', async () => {
+      // health check
+      mockFetch.mockResolvedValueOnce({ ok: true })
+      // /api/v0/models
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          object: 'list',
+          data: [{
+            id: 'llama-3-8b',
+            object: 'model',
+            type: 'llm',
+            publisher: 'meta',
+            arch: 'llama',
+            compatibility_type: 'gguf',
+            quantization: 'Q4_K_M',
+            state: 'loaded',
+            max_context_length: 131072,
+            loaded_context_length: 8192
+          }]
+        })
+      })
+      // cache warm-up fetch
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [{ id: 'llama-3-8b', object: 'model', created: 0, owned_by: 'meta' }] })
+      })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: { baseURL: 'http://127.0.0.1:1234/v1' }
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider.lmstudio.models?.['llama-3-8b']).toEqual(
+        expect.objectContaining({
+          id: 'llama-3-8b',
+          organizationOwner: 'meta',
+          limit: {
+            context: 8192,
+            output: 2048
+          }
+        })
+      )
+    })
+
+    it('should fall back to /v1/models when /api/v0/models returns 404', async () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      // health check
+      mockFetch.mockResolvedValueOnce({ ok: true })
+      // /api/v0/models returns 404
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found' })
+      // fallback /v1/models
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [{ id: 'legacy-model', object: 'model', created: 0, owned_by: 'local' }]
+        })
+      })
+      // cache warm-up
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [{ id: 'legacy-model', object: 'model', created: 0, owned_by: 'local' }] })
+      })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: { baseURL: 'http://127.0.0.1:1234/v1' }
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v0/models unavailable')
+      )
+      expect(config.provider.lmstudio.models?.['legacy-model']).toBeDefined()
+      expect(config.provider.lmstudio.models?.['legacy-model']?.limit).toBeUndefined()
+
+      consoleWarnSpy.mockRestore()
+    })
+
+    it('should use max_context_length when loaded_context_length is absent and cap output at 16384', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          object: 'list',
+          data: [{
+            id: 'unloaded-model',
+            object: 'model',
+            type: 'llm',
+            publisher: 'meta',
+            arch: 'llama',
+            compatibility_type: 'gguf',
+            quantization: 'Q4_K_M',
+            state: 'not-loaded',
+            max_context_length: 131072
+          }]
+        })
+      })
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: [] })
+      })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: { baseURL: 'http://127.0.0.1:1234/v1' }
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider.lmstudio.models?.['unloaded-model']?.limit).toEqual({
+        context: 131072,
+        output: 16384
+      })
+    })
+
     it('should handle LM Studio offline gracefully', async () => {
       mockFetch.mockRejectedValue(new Error('Connection refused'))
 
