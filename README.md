@@ -30,6 +30,8 @@ Add the plugin to your `opencode.json`:
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
+    // For dev testing, you can replace this with file:$YOUR_LOCAL_PLUGIN_REPO_PATH
+    // Example: file:/Users/you/workspace/opencode-lmstudio
     "opencode-lmstudio@latest"
   ],
   "provider": {
@@ -77,6 +79,40 @@ You can also manually configure the provider with specific models:
 
 The plugin will automatically discover and add any additional models available in LM Studio that aren't already configured.
 
+### Filter Models by `modelTypes`
+
+Configure `modelTypes` under `provider.lmstudio.options.modelTypes`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "opencode-lmstudio@latest"
+  ],
+  "provider": {
+    "lmstudio": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LM Studio (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:1234/v1",
+        "modelTypes": ["unknown"]
+      }
+    }
+  }
+}
+```
+
+Allowed values:
+
+- `chat`
+- `embedding`
+- `unknown`
+
+Current behavior:
+
+- `modelTypes` is derived from the LM Studio model `id`, not a dedicated API type field.
+- `unknown` means the model `id` did not match the plugin's current `chat` or `embedding` rules.
+
 ## How It Works
 
 1. On OpenCode startup, the plugin's `config` hook is called
@@ -99,4 +135,3 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-

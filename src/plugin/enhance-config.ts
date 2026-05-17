@@ -3,9 +3,25 @@ import { ToastNotifier } from '../ui/toast-notifier'
 import { categorizeModel, formatModelName, extractModelOwner } from '../utils'
 import { normalizeBaseURL, checkLMStudioHealth, discoverLMStudioModels, autoDetectLMStudio } from '../utils/lmstudio-api'
 import type { PluginInput } from '@opencode-ai/plugin'
-import type { LMStudioModel } from '../types'
+import type { LMStudioModel, ModelType } from '../types'
 
 const modelStatusCache = new ModelStatusCache()
+const allowedModelTypes = ['chat', 'embedding', 'unknown'] as const
+
+function getConfiguredModelTypes(lmstudioProvider: any): Set<ModelType> | null {
+  const modelTypes = lmstudioProvider?.options?.modelTypes ?? lmstudioProvider?.options?.model_types
+
+  if (!Array.isArray(modelTypes) || modelTypes.length === 0) {
+    return null
+  }
+
+  return new Set(
+    modelTypes.filter((modelType: unknown): modelType is ModelType =>
+      typeof modelType === 'string' &&
+      (allowedModelTypes as readonly string[]).includes(modelType)
+    )
+  )
+}
 
 export async function enhanceConfig(
   config: any,
@@ -64,6 +80,7 @@ export async function enhanceConfig(
       // Merge discovered models with configured models
       const existingModels = lmstudioProvider.models || {}
       const discoveredModels: Record<string, any> = {}
+      const configuredModelTypes = getConfiguredModelTypes(lmstudioProvider)
       let chatModelsCount = 0
       let embeddingModelsCount = 0
 
@@ -77,6 +94,11 @@ export async function enhanceConfig(
         // Only add if not already configured
         if (!existingModels[modelKey] && !existingModels[model.id]) {
           const modelType = categorizeModel(model.id)
+
+          if (configuredModelTypes && !configuredModelTypes.has(modelType)) {
+            continue
+          }
+
           const owner = extractModelOwner(model.id)
           const modelConfig: any = {
             id: model.id,
@@ -153,4 +175,3 @@ export async function enhanceConfig(
     toastNotifier.warning("Plugin configuration failed", "Configuration Error").catch(() => {})
   }
 }
-

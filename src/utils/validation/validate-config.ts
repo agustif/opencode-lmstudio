@@ -1,5 +1,31 @@
 import type { ValidationResult } from './validation-result'
 
+const allowedModelTypes = new Set(['chat', 'embedding', 'unknown'])
+const allowedModelTypesList = Array.from(allowedModelTypes).join(', ')
+
+function formatInvalidModelTypeError(modelType: unknown): string {
+  const value = String(modelType)
+  const suggestion = value === 'embedded' ? ' Did you mean "embedding"?' : ''
+  return `LM Studio provider options.modelTypes contains invalid value: ${value}. Allowed values: ${allowedModelTypesList}.${suggestion}`
+}
+
+function validateModelTypesOption(
+  errors: string[],
+  modelTypes: unknown,
+  optionPath: string
+): void {
+  if (!Array.isArray(modelTypes)) {
+    errors.push(`LM Studio provider ${optionPath} must be an array`)
+    return
+  }
+
+  for (const modelType of modelTypes) {
+    if (typeof modelType !== 'string' || !allowedModelTypes.has(modelType)) {
+      errors.push(formatInvalidModelTypeError(modelType))
+    }
+  }
+}
+
 export function validateConfig(config: any): ValidationResult {
   const errors: string[] = []
   const warnings: string[] = []
@@ -34,6 +60,12 @@ export function validateConfig(config: any): ValidationResult {
         } else if (!isValidURL(lmstudio.options.baseURL)) {
           warnings.push('LM Studio provider baseURL may be invalid')
         }
+
+        if (lmstudio.options.modelTypes !== undefined) {
+          validateModelTypesOption(errors, lmstudio.options.modelTypes, 'options.modelTypes')
+        } else if (lmstudio.options.model_types !== undefined) {
+          validateModelTypesOption(errors, lmstudio.options.model_types, 'options.model_types')
+        }
       }
 
       // Validate models configuration
@@ -58,4 +90,3 @@ function isValidURL(url: string): boolean {
     return false
   }
 }
-

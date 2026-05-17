@@ -178,6 +178,220 @@ describe('LMStudio Plugin', () => {
       })
     })
 
+    it('should keep baseline behavior when modelTypes is not configured', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'text-embedding-model', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'llama-chat-model', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'custom-model', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: { baseURL: 'http://127.0.0.1:1234/v1' },
+            models: {}
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider.lmstudio.models).toEqual({
+        'text-embedding-model': expect.objectContaining({
+          id: 'text-embedding-model',
+          modalities: {
+            input: ['text'],
+            output: ['embedding']
+          }
+        }),
+        'llama-chat-model': expect.objectContaining({
+          id: 'llama-chat-model',
+          modalities: {
+            input: ['text', 'image'],
+            output: ['text']
+          }
+        }),
+        'custom-model': expect.objectContaining({
+          id: 'custom-model'
+        })
+      })
+    })
+
+    it('should filter discovered models using options.modelTypes', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'text-embedding-model', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'llama-chat-model', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'custom-model', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: {
+              baseURL: 'http://127.0.0.1:1234/v1',
+              modelTypes: ['chat']
+            },
+            models: {}
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider.lmstudio.models).toEqual({
+        'llama-chat-model': expect.objectContaining({
+          id: 'llama-chat-model',
+          modalities: {
+            input: ['text', 'image'],
+            output: ['text']
+          }
+        })
+      })
+    })
+
+    it('should filter discovered models using unknown model type derived from model id', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'text-embedding-model', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'llama-chat-model', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'custom-model', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: {
+              baseURL: 'http://127.0.0.1:1234/v1',
+              modelTypes: ['unknown']
+            },
+            models: {}
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider.lmstudio.models).toEqual({
+        'custom-model': expect.objectContaining({
+          id: 'custom-model'
+        })
+      })
+    })
+
+    it('should reject invalid options.modelTypes values', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: {
+              baseURL: 'http://127.0.0.1:1234/v1',
+              modelTypes: ['llm']
+            },
+            models: {}
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[opencode-lmstudio] Invalid config provided:',
+        expect.arrayContaining([
+          'LM Studio provider options.modelTypes contains invalid value: llm. Allowed values: chat, embedding, unknown.'
+        ])
+      )
+
+      consoleSpy.mockRestore()
+    })
+
+    it('should suggest embedding when embedded is used in options.modelTypes', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: {
+              baseURL: 'http://127.0.0.1:1234/v1',
+              modelTypes: ['embedded']
+            },
+            models: {}
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[opencode-lmstudio] Invalid config provided:',
+        expect.arrayContaining([
+          'LM Studio provider options.modelTypes contains invalid value: embedded. Allowed values: chat, embedding, unknown. Did you mean "embedding"?'
+        ])
+      )
+
+      consoleSpy.mockRestore()
+    })
+
+    it('should keep backward compatibility for legacy options.model_types', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'text-embedding-model', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'llama-chat-model', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: {
+              baseURL: 'http://127.0.0.1:1234/v1',
+              model_types: ['embedding']
+            },
+            models: {}
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider.lmstudio.models).toEqual({
+        'text-embedding-model': expect.objectContaining({
+          id: 'text-embedding-model',
+          modalities: {
+            input: ['text'],
+            output: ['embedding']
+          }
+        })
+      })
+    })
+
     it('should handle LM Studio offline gracefully', async () => {
       mockFetch.mockRejectedValue(new Error('Connection refused'))
 
