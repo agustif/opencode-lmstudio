@@ -88,13 +88,11 @@ export async function enhanceConfig(
             modelConfig.organizationOwner = owner
           }
 
-          // Add additional metadata based on model type
+          // Skip embedding models — opencode only supports "text", "audio", "image", "video", "pdf"
+          // as valid output modalities, so embedding models cannot be registered
           if (modelType === 'embedding') {
             embeddingModelsCount++
-            modelConfig.modalities = {
-              input: ["text"],
-              output: ["embedding"]
-            }
+            continue
           } else if (modelType === 'chat') {
             chatModelsCount++
             modelConfig.modalities = {
