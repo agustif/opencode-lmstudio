@@ -68,7 +68,7 @@ export async function enhanceConfig(
       // Merge discovered models with configured models
       const existingModels = lmstudioProvider.models || {}
       const discoveredModels: Record<string, any> = {}
-      const visibleModelIds = new Set<string>(Object.keys(existingModels))
+      const visibleModelIds = new Set<string>()
       const hasExplicitWhitelist = Array.isArray(lmstudioProvider.whitelist) && lmstudioProvider.whitelist.length > 0
       let skippedEmbeddingModelsCount = 0
 

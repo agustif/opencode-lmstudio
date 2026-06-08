@@ -74,7 +74,16 @@ describe('LMStudio Plugin', () => {
 
       expect(getLMStudioApiKey(undefined, 'http://127.0.0.1:1234/v1')).toBe('private-token')
       expect(getLMStudioApiKey(undefined, 'http://192.168.0.10:1234/v1')).toBe('private-token')
+      expect(getLMStudioApiKey(undefined, 'http://[::1]:1234/v1')).toBe('private-token')
+      expect(getLMStudioApiKey(undefined, 'http://[fc00::1]:1234/v1')).toBe('private-token')
+      expect(getLMStudioApiKey(undefined, 'http://[fd00::1]:1234/v1')).toBe('private-token')
+      expect(getLMStudioApiKey(undefined, 'http://[fe80::1]:1234/v1')).toBe('private-token')
+      expect(getLMStudioApiKey(undefined, 'http://[febf::1]:1234/v1')).toBe('private-token')
       expect(getLMStudioApiKey(undefined, 'https://example.com/v1')).toBeUndefined()
+      expect(getLMStudioApiKey(undefined, 'https://fcorp.example/v1')).toBeUndefined()
+      expect(getLMStudioApiKey(undefined, 'https://fdservice.example/v1')).toBeUndefined()
+      expect(getLMStudioApiKey(undefined, 'https://fe80-models.example/v1')).toBeUndefined()
+      expect(getLMStudioApiKey(undefined, 'http://[fec0::1]:1234/v1')).toBeUndefined()
     })
 
     it('should allow explicitly configured env syntax for non-private URLs', () => {
@@ -280,6 +289,48 @@ describe('LMStudio Plugin', () => {
           name: 'New Model'
         })
       })
+    })
+
+    it('should generate the whitelist from discovered models instead of stale defaults', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'qwen/qwen3-coder-next', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const config: any = {
+        provider: {
+          lmstudio: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'LM Studio (local)',
+            options: { baseURL: 'http://127.0.0.1:1234/v1' },
+            models: {
+              'gpt-oss-20b': { name: 'GPT OSS 20B' },
+              'qwen3-30b-a3b-2507': { name: 'Qwen3 30B A3B 2507' }
+            }
+          }
+        }
+      }
+
+      await pluginHooks.config(config)
+
+      expect(config.provider.lmstudio.models).toEqual(expect.objectContaining({
+        'gpt-oss-20b': { name: 'GPT OSS 20B' },
+        'qwen3-30b-a3b-2507': { name: 'Qwen3 30B A3B 2507' },
+        'qwen_qwen3-coder-next': expect.objectContaining({
+          id: 'qwen/qwen3-coder-next',
+          name: 'Qwen3 Coder Next'
+        })
+      }))
+      expect(config.provider.lmstudio.whitelist).toEqual([
+        'qwen_qwen3-coder-next',
+        'qwen/qwen3-coder-next'
+      ])
+      expect(config.provider.lmstudio.whitelist).not.toContain('gpt-oss-20b')
+      expect(config.provider.lmstudio.whitelist).not.toContain('qwen3-30b-a3b-2507')
     })
 
     it('should skip embedding models and mark discovered LLM modalities', async () => {

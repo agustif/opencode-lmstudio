@@ -11,11 +11,14 @@ function isLocalOrPrivateBaseURL(baseURL?: string): boolean {
     const { hostname } = new URL(baseURL)
     const normalizedHost = hostname.toLowerCase()
     const ipv4Parts = normalizedHost.split('.').map(part => Number(part))
+    const ipv6Literal = normalizedHost.startsWith("[") && normalizedHost.endsWith("]")
+      ? normalizedHost.slice(1, -1)
+      : undefined
 
     if (normalizedHost === "localhost" || normalizedHost.endsWith(".localhost")) {
       return true
     }
-    if (normalizedHost === "::1" || normalizedHost === "[::1]") {
+    if (ipv6Literal === "::1") {
       return true
     }
     if (normalizedHost.endsWith(".local")) {
@@ -29,12 +32,11 @@ function isLocalOrPrivateBaseURL(baseURL?: string): boolean {
         (first === 192 && second === 168) ||
         (first === 169 && second === 254)
     }
-    if (
-      normalizedHost.startsWith("fc") ||
-      normalizedHost.startsWith("fd") ||
-      normalizedHost.startsWith("fe80:")
-    ) {
-      return true
+    if (ipv6Literal) {
+      const firstHextet = Number.parseInt(ipv6Literal.split(":")[0], 16)
+      if (!Number.isNaN(firstHextet)) {
+        return (firstHextet & 0xfe00) === 0xfc00 || (firstHextet & 0xffc0) === 0xfe80
+      }
     }
   } catch {
     return false
