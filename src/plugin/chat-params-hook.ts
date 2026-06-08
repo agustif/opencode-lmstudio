@@ -15,7 +15,7 @@ export function createChatParamsHook(toastNotifier: ToastNotifier) {
       return
     }
     
-    const { sessionID, agent, model, provider } = input // message not used
+    const { sessionID, model, provider } = input // message not used
     
     // Validate required fields
     if (!isValidModel(model)) {

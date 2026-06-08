@@ -145,7 +145,7 @@ export async function enhanceConfig(
       await modelStatusCache.getModels(baseURL, async () => {
         return await discoverLMStudioModels(baseURL, apiKey).then(models => models.map(m => m.id))
       })
-    } catch (error) {
+    } catch {
       // Cache warming failed, but not critical
     }
   } catch (error) {

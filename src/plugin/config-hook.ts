@@ -6,8 +6,6 @@ import type { PluginInput } from '@opencode-ai/plugin'
 
 export function createConfigHook(client: PluginInput['client'], toastNotifier: ToastNotifier) {
   return async (config: any) => {
-    const initialModelCount = config?.provider?.lmstudio?.models ? Object.keys(config.provider.lmstudio.models).length : 0
-    
     // Check if config is modifiable
     if (config && (Object.isFrozen?.(config) || Object.isSealed?.(config))) {
       console.warn("[opencode-lmstudio] Config object is frozen/sealed - cannot modify directly")
@@ -64,7 +62,6 @@ export function createConfigHook(client: PluginInput['client'], toastNotifier: T
     // Wait for initial model discovery with timeout (max 5 seconds)
     // This ensures models are available when OpenCode reads the config
     // We use Promise.race to avoid blocking too long, but we check if models were added
-    const startTime = Date.now()
     const discoveryPromise = enhanceConfig(config, client, toastNotifier)
     const timeoutMs = 5000 // 5 second timeout
     
