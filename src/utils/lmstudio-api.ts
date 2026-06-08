@@ -136,7 +136,9 @@ export async function discoverLMStudioModels(
     const data = (await response.json()) as LMStudioModelsResponse
     return data.data ?? []
   } catch (error) {
-    throw new Error(`Failed to discover models: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(`Failed to discover models: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error,
+    })
   }
 }
 
