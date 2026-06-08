@@ -1,15 +1,19 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-lmstudio",
-  "version": "0.3.0",
-  "description": "OpenCode plugin for enhanced LM Studio support with auto-detection and dynamic model discovery",
+  "version": "0.3.1",
+  "description": "OpenCode plugin for enhanced LM Studio support with auto-detection, dynamic model discovery and LM Studio API key authentication",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
-    "src"
+    "dist"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -19,10 +23,11 @@
     "test:watch": "vitest watch",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
-    "build": "npm run typecheck && npm run test:run",
+    "build": "tsc -p tsconfig.build.json",
     "validate": "npm run lint && npm run typecheck && npm run test:run",
     "validate:config": "bun scripts/validate-config.ts",
     "release": "bun scripts/release.ts",
+    "prepack": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

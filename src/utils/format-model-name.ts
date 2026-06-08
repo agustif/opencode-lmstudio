@@ -1,4 +1,4 @@
-import type { LMStudioModel } from '../types'
+import type { LMStudioModel } from '../types/index.ts'
 
 /**
  * Extract owner from model ID (e.g., "qwen" from "qwen/qwen3-30b")
@@ -60,4 +60,3 @@ export function formatModelName(model: LMStudioModel): string {
   
   return tokens
 }
-

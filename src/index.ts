@@ -1,1 +1,1 @@
-export { LMStudioPlugin } from './plugin'
+export { LMStudioPlugin } from './plugin/index.ts'

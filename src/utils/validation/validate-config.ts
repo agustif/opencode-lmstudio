@@ -1,4 +1,4 @@
-import type { ValidationResult } from './validation-result'
+import type { ValidationResult } from './validation-result.ts'
 
 export function validateConfig(config: any): ValidationResult {
   const errors: string[] = []
@@ -58,4 +58,3 @@ function isValidURL(url: string): boolean {
     return false
   }
 }
-

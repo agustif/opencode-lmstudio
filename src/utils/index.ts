@@ -1,12 +1,42 @@
-import type { ModelValidationError, AutoFixSuggestion, SimilarModel } from '../types'
+import type { ModelValidationError, AutoFixSuggestion, SimilarModel } from '../types/index.ts'
 
-export { formatModelName, extractModelOwner } from './format-model-name'
+export { formatModelName, extractModelOwner } from './format-model-name.ts'
 
-// Categorize models by type
-export function categorizeModel(modelId: string): 'chat' | 'embedding' | 'unknown' {
+export type LMStudioModelType = 'chat' | 'embedding' | 'multimodal' | 'unknown'
+
+const MULTIMODAL_MODEL_PATTERNS = [
+  /\bvl\b/,
+  /\bvision\b/,
+  /\bvisual\b/,
+  /\bimage\b/,
+  /\bomni\b/,
+  /\bmultimodal\b/,
+  /\bllava\b/,
+  /\bbakllava\b/,
+  /\bmoondream\b/,
+  /\bpixtral\b/,
+  /\binternvl\b/,
+  /\bidefics\b/,
+  /\bcogvlm\b/,
+  /\bminicpm-v\b/,
+  /\bmllama\b/,
+  /\bphi-3\.5-vision\b/,
+  /\bphi-4-multimodal\b/,
+  /\bllama-3\.2-vision\b/,
+  /\bgranite-vision\b/,
+  /\bgemma-3n?\b/,
+  /\bgemma-4\b/,
+  /\bqwen[0-9._-]*-?vl\b/,
+]
+
+// Categorize models by type using the model id exposed by LM Studio's /v1/models endpoint.
+export function categorizeModel(modelId: string): LMStudioModelType {
   const lowerId = modelId.toLowerCase()
   if (lowerId.includes('embedding') || lowerId.includes('embed')) {
     return 'embedding'
+  }
+  if (MULTIMODAL_MODEL_PATTERNS.some(pattern => pattern.test(lowerId))) {
+    return 'multimodal'
   }
   if (lowerId.includes('gpt') || lowerId.includes('llama') || 
       lowerId.includes('claude') || lowerId.includes('qwen') ||

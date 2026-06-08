@@ -1,6 +1,7 @@
-import { ToastNotifier } from '../ui/toast-notifier'
-import { validateConfig } from '../utils/validation'
-import { enhanceConfig } from './enhance-config'
+import { ToastNotifier } from '../ui/toast-notifier.ts'
+import { validateConfig } from '../utils/validation/index.ts'
+import { enhanceConfig } from './enhance-config.ts'
+import { getLMStudioApiKey } from '../utils/lmstudio-api.ts'
 import type { PluginInput } from '@opencode-ai/plugin'
 
 export function createConfigHook(client: PluginInput['client'], toastNotifier: ToastNotifier) {
@@ -30,8 +31,14 @@ export function createConfigHook(client: PluginInput['client'], toastNotifier: T
     if (!config.provider?.lmstudio) {
       // Quick check - try default port first with timeout
       try {
+        const apiKey = getLMStudioApiKey(config.provider?.lmstudio?.options?.apiKey)
+
         const response = await fetch("http://127.0.0.1:1234/v1/models", {
           method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
           signal: AbortSignal.timeout(1000), // 1 second timeout for quick check
         })
         
@@ -43,6 +50,7 @@ export function createConfigHook(client: PluginInput['client'], toastNotifier: T
               name: "LM Studio (local)",
               options: {
                 baseURL: "http://127.0.0.1:1234/v1",
+                ...(apiKey ? { apiKey } : {}),
               },
               models: {},
             }
@@ -81,4 +89,3 @@ export function createConfigHook(client: PluginInput['client'], toastNotifier: T
     }
   }
 }
-

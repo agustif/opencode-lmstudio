@@ -1,4 +1,4 @@
-import type { CacheStats } from '../types'
+import type { CacheStats } from '../types/index.ts'
 
 // Model Status Cache for reducing API calls
 export class ModelStatusCache {

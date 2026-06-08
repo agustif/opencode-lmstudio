@@ -1,8 +1,20 @@
 import type { Plugin, PluginInput } from "@opencode-ai/plugin"
-import { ToastNotifier } from '../ui/toast-notifier'
-import { createConfigHook } from './config-hook'
-import { createEventHook } from './event-hook'
-import { createChatParamsHook } from './chat-params-hook'
+import { createRequire } from "node:module"
+import { ToastNotifier } from '../ui/toast-notifier.ts'
+import { createConfigHook } from './config-hook.ts'
+import { createEventHook } from './event-hook.ts'
+import { createChatParamsHook } from './chat-params-hook.ts'
+
+const nodeRequire = createRequire(import.meta.url)
+
+function getPackageVersion(): string {
+  try {
+    const packageJSON = nodeRequire("../../package.json") as { version?: unknown }
+    return typeof packageJSON.version === "string" ? packageJSON.version : "unknown"
+  } catch {
+    return "unknown"
+  }
+}
 
 /**
  * LM Studio Plugin - Enhanced Modular Version
@@ -17,7 +29,9 @@ import { createChatParamsHook } from './chat-params-hook'
  * - Intelligent model suggestions and error recovery
  */
 export const LMStudioPlugin: Plugin = async (input: PluginInput) => {
-  console.log("[opencode-lmstudio] LM Studio plugin initialized")
+  console.log("[opencode-lmstudio] LM Studio plugin initialized", {
+    version: getPackageVersion(),
+  })
   
   const { client } = input
   
@@ -39,4 +53,3 @@ export const LMStudioPlugin: Plugin = async (input: PluginInput) => {
     "chat.params": createChatParamsHook(toastNotifier),
   }
 }
-

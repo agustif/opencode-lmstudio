@@ -1,4 +1,4 @@
-import type { ValidationResult } from './validation-result'
+import type { ValidationResult } from './validation-result.ts'
 
 export function validateLMStudioResponse(data: any): ValidationResult {
   const errors: string[] = []
@@ -28,4 +28,3 @@ export function validateLMStudioResponse(data: any): ValidationResult {
     warnings
   }
 }
-

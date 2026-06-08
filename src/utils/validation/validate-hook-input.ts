@@ -1,4 +1,4 @@
-import type { ValidationResult } from './validation-result'
+import type { ValidationResult } from './validation-result.ts'
 
 export function validateHookInput(hookName: string, input: any): ValidationResult {
   const errors: string[] = []
@@ -49,4 +49,3 @@ export function validateHookInput(hookName: string, input: any): ValidationResul
     warnings
   }
 }
-

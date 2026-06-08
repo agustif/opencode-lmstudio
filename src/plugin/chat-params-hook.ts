@@ -1,9 +1,9 @@
-import { ModelStatusCache } from '../cache/model-status-cache'
-import { ToastNotifier } from '../ui/toast-notifier'
-import { findSimilarModels, retryWithBackoff, categorizeError, generateAutoFixSuggestions } from '../utils'
-import { getLoadedModels } from './get-loaded-models'
-import { normalizeBaseURL } from '../utils/lmstudio-api'
-import { safeAsyncOperation, isPluginHookInput, isLMStudioProvider, isValidModel } from '../utils/validation'
+import { ModelStatusCache } from '../cache/model-status-cache.ts'
+import { ToastNotifier } from '../ui/toast-notifier.ts'
+import { findSimilarModels, retryWithBackoff, categorizeError, generateAutoFixSuggestions } from '../utils/index.ts'
+import { getLoadedModels } from './get-loaded-models.ts'
+import { getLMStudioApiKey, normalizeBaseURL } from '../utils/lmstudio-api.ts'
+import { safeAsyncOperation, isPluginHookInput, isLMStudioProvider, isValidModel } from '../utils/validation/index.ts'
 
 const modelStatusCache = new ModelStatusCache()
 
@@ -30,6 +30,7 @@ export function createChatParamsHook(toastNotifier: ToastNotifier) {
 
     
     const baseURL = normalizeBaseURL(provider.options?.baseURL || "http://127.0.0.1:1234")
+    const apiKey = getLMStudioApiKey(provider.options?.apiKey)
     
     // Show loading notification
     await safeAsyncOperation(
@@ -41,7 +42,7 @@ export function createChatParamsHook(toastNotifier: ToastNotifier) {
     // Use retry logic for model validation
     const validationResult = await retryWithBackoff(
       async () => {
-        const loadedModels = await getLoadedModels(baseURL)
+        const loadedModels = await getLoadedModels(baseURL, apiKey)
         const isModelLoaded = loadedModels.includes(model.id)
         
         if (!isModelLoaded) {
@@ -71,7 +72,7 @@ export function createChatParamsHook(toastNotifier: ToastNotifier) {
       // Get available models for similarity matching
       let availableModels: string[] = []
       try {
-        availableModels = await getLoadedModels(baseURL)
+        availableModels = await getLoadedModels(baseURL, apiKey)
       } catch (e) {
         console.warn("[opencode-lmstudio] Failed to get available models for suggestions", { error: e })
       }
@@ -153,4 +154,3 @@ export function createChatParamsHook(toastNotifier: ToastNotifier) {
     }
   }
 }
-

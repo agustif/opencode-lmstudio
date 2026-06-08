@@ -1,4 +1,4 @@
-import type { LoadingStatus, ModelLoadingState } from '../types'
+import type { LoadingStatus, ModelLoadingState } from '../types/index.ts'
 
 // Model Loading State Monitor with periodic polling
 export class ModelLoadingMonitor {

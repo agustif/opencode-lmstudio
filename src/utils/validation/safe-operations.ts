@@ -1,4 +1,4 @@
-import type { ValidationResult } from './validation-result'
+import type { ValidationResult } from './validation-result.ts'
 
 export function safeJSONParse<T>(json: string, validator?: (data: any) => ValidationResult): { data?: T; error?: string; validation?: ValidationResult } {
   try {
@@ -37,4 +37,3 @@ export async function safeAsyncOperation<T>(
     return { error: errorMessage }
   }
 }
-

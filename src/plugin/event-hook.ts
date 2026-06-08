@@ -1,4 +1,4 @@
-import { validateHookInput } from '../utils/validation'
+import { validateHookInput } from '../utils/validation/index.ts'
 
 export function createEventHook() {
   return async ({ event }: { event: any }) => {
@@ -15,4 +15,3 @@ export function createEventHook() {
     }
   }
 }
-

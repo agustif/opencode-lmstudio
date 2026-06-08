@@ -8,6 +8,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
@@ -16,4 +17,3 @@
   "include": ["src/**/*"],
   "exclude": ["node_modules"]
 }
-
