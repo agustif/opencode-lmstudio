@@ -69,6 +69,20 @@ describe('LMStudio Plugin', () => {
       expect(getLMStudioApiKey()).toBe('preferred-token')
     })
 
+    it('should only use environment fallback for local or private LM Studio URLs', () => {
+      process.env.LMSTUDIO_API_KEY = 'private-token'
+
+      expect(getLMStudioApiKey(undefined, 'http://127.0.0.1:1234/v1')).toBe('private-token')
+      expect(getLMStudioApiKey(undefined, 'http://192.168.0.10:1234/v1')).toBe('private-token')
+      expect(getLMStudioApiKey(undefined, 'https://example.com/v1')).toBeUndefined()
+    })
+
+    it('should allow explicitly configured env syntax for non-private URLs', () => {
+      process.env.CUSTOM_LM_STUDIO_KEY = 'explicit-token'
+
+      expect(getLMStudioApiKey('{env:CUSTOM_LM_STUDIO_KEY}', 'https://example.com/v1')).toBe('explicit-token')
+    })
+
     it('should send bearer auth headers during model discovery', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -86,6 +100,29 @@ describe('LMStudio Plugin', () => {
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer explicit-token'
+          })
+        })
+      )
+    })
+
+    it('should not send environment fallback auth headers to public URLs', async () => {
+      process.env.LMSTUDIO_API_KEY = 'private-token'
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'public-model', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      await discoverLMStudioModels('https://example.com/v1')
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://example.com/v1/models',
+        expect.objectContaining({
+          headers: expect.not.objectContaining({
+            Authorization: expect.any(String)
           })
         })
       )

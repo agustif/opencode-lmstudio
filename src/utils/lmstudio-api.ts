@@ -4,6 +4,45 @@ const DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
 const LM_STUDIO_MODELS_ENDPOINT = "/v1/models"
 const API_KEY_ENV_VARS = ["LMSTUDIO_API_KEY", "LM_API_TOKEN"] as const
 
+function isLocalOrPrivateBaseURL(baseURL?: string): boolean {
+  if (!baseURL) return true
+
+  try {
+    const { hostname } = new URL(baseURL)
+    const normalizedHost = hostname.toLowerCase()
+    const ipv4Parts = normalizedHost.split('.').map(part => Number(part))
+
+    if (normalizedHost === "localhost" || normalizedHost.endsWith(".localhost")) {
+      return true
+    }
+    if (normalizedHost === "::1" || normalizedHost === "[::1]") {
+      return true
+    }
+    if (normalizedHost.endsWith(".local")) {
+      return true
+    }
+    if (ipv4Parts.length === 4 && ipv4Parts.every(part => Number.isInteger(part) && part >= 0 && part <= 255)) {
+      const [first, second] = ipv4Parts
+      return first === 10 ||
+        first === 127 ||
+        (first === 172 && second >= 16 && second <= 31) ||
+        (first === 192 && second === 168) ||
+        (first === 169 && second === 254)
+    }
+    if (
+      normalizedHost.startsWith("fc") ||
+      normalizedHost.startsWith("fd") ||
+      normalizedHost.startsWith("fe80:")
+    ) {
+      return true
+    }
+  } catch {
+    return false
+  }
+
+  return false
+}
+
 function resolveEnvSyntax(value?: string): string | undefined {
   if (!value) return undefined
   const match = value.match(/^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$/)
@@ -11,9 +50,13 @@ function resolveEnvSyntax(value?: string): string | undefined {
   return value
 }
 
-export function getLMStudioApiKey(explicitApiKey?: string): string | undefined {
+export function getLMStudioApiKey(explicitApiKey?: string, baseURL?: string): string | undefined {
   const resolvedExplicitApiKey = resolveEnvSyntax(explicitApiKey)
   if (resolvedExplicitApiKey) return resolvedExplicitApiKey
+
+  if (!isLocalOrPrivateBaseURL(baseURL)) {
+    return undefined
+  }
 
   for (const envVar of API_KEY_ENV_VARS) {
     const value = process.env[envVar]
@@ -23,12 +66,12 @@ export function getLMStudioApiKey(explicitApiKey?: string): string | undefined {
   return undefined
 }
 
-function buildHeaders(apiKey?: string): Record<string, string> {
+function buildHeaders(apiKey?: string, baseURL?: string): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   }
 
-  const resolvedApiKey = getLMStudioApiKey(apiKey)
+  const resolvedApiKey = getLMStudioApiKey(apiKey, baseURL)
   if (resolvedApiKey) {
     headers.Authorization = `Bearer ${resolvedApiKey}`
   }
@@ -64,7 +107,7 @@ export async function checkLMStudioHealth(
     const url = buildAPIURL(baseURL)
     const response = await fetch(url, {
       method: "GET",
-      headers: buildHeaders(apiKey),
+      headers: buildHeaders(apiKey, baseURL),
       signal: AbortSignal.timeout(3000),
     })
     return response.ok
@@ -82,7 +125,7 @@ export async function discoverLMStudioModels(
     const url = buildAPIURL(baseURL)
     const response = await fetch(url, {
       method: "GET",
-      headers: buildHeaders(apiKey),
+      headers: buildHeaders(apiKey, baseURL),
       signal: AbortSignal.timeout(3000),
     })
 
@@ -106,7 +149,7 @@ export async function fetchModelsDirect(
     const url = buildAPIURL(baseURL)
     const response = await fetch(url, {
       method: "GET",
-      headers: buildHeaders(apiKey),
+      headers: buildHeaders(apiKey, baseURL),
       signal: AbortSignal.timeout(3000),
     })
     if (!response.ok) {

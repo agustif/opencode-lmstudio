@@ -30,7 +30,7 @@ export function createChatParamsHook(toastNotifier: ToastNotifier) {
 
     
     const baseURL = normalizeBaseURL(provider.options?.baseURL || "http://127.0.0.1:1234")
-    const apiKey = getLMStudioApiKey(provider.options?.apiKey)
+    const apiKey = getLMStudioApiKey(provider.options?.apiKey, baseURL)
     
     // Show loading notification
     await safeAsyncOperation(

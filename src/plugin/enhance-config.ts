@@ -20,7 +20,7 @@ export async function enhanceConfig(
     // If lmstudio provider exists, use its baseURL
     if (lmstudioProvider) {
       baseURL = normalizeBaseURL(lmstudioProvider.options?.baseURL || "http://127.0.0.1:1234")
-      apiKey = getLMStudioApiKey(lmstudioProvider.options?.apiKey)
+      apiKey = getLMStudioApiKey(lmstudioProvider.options?.apiKey, baseURL)
     } else {
       // Try to auto-detect LM Studio
       apiKey = getLMStudioApiKey()

@@ -29,7 +29,7 @@ export function createConfigHook(client: PluginInput['client'], toastNotifier: T
     if (!config.provider?.lmstudio) {
       // Quick check - try default port first with timeout
       try {
-        const apiKey = getLMStudioApiKey(config.provider?.lmstudio?.options?.apiKey)
+        const apiKey = getLMStudioApiKey(config.provider?.lmstudio?.options?.apiKey, "http://127.0.0.1:1234")
 
         const response = await fetch("http://127.0.0.1:1234/v1/models", {
           method: "GET",

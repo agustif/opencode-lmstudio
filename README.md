@@ -86,6 +86,8 @@ opencode
 
 For compatibility, the plugin also checks `LM_API_TOKEN` when no `apiKey` is configured.
 
+Environment-variable fallback is only used for local or private-network LM Studio URLs such as `localhost`, `127.0.0.1`, `192.168.x.x`, `10.x.x.x`, `172.16.x.x` through `172.31.x.x`, link-local addresses, and `.local` hostnames. For public or hosted endpoints, configure `options.apiKey` explicitly, for example with `{env:LMSTUDIO_API_KEY}`. This avoids accidentally sending a local LM Studio token to an unintended public URL.
+
 The plugin intentionally does not fall back to `OPENAI_API_KEY`. LM Studio can run on a local network host, and reusing a cloud OpenAI key for a local/LAN endpoint would be easy to do accidentally.
 
 ### Manual Configuration
