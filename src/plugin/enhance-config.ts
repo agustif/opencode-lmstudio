@@ -91,10 +91,10 @@ export async function enhanceConfig(
           // Add additional metadata based on model type
           if (modelType === 'embedding') {
             embeddingModelsCount++
-            modelConfig.modalities = {
-              input: ["text"],
-              output: ["embedding"]
-            }
+            // NOTE: OpenCode's model schema only accepts text/audio/image/video/pdf
+            // as modality values. Emitting "embedding" causes a schema rejection that
+            // crashes the server on startup, so embedding models are registered without
+            // an explicit `modalities` field (OpenCode applies its defaults).
           } else if (modelType === 'chat') {
             chatModelsCount++
             modelConfig.modalities = {
