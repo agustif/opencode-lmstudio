@@ -1,155 +1,123 @@
-import { ModelStatusCache } from '../cache/model-status-cache.ts'
-import { ToastNotifier } from '../ui/toast-notifier.ts'
-import { categorizeModel, formatModelName, extractModelOwner } from '../utils/index.ts'
-import { normalizeBaseURL, checkLMStudioHealth, discoverLMStudioModels, autoDetectLMStudio, getLMStudioApiKey } from '../utils/lmstudio-api.ts'
-import type { PluginInput } from '@opencode-ai/plugin'
-import type { LMStudioModel } from '../types/index.ts'
+import type {
+  LMStudioModel,
+  ModelConfig,
+  OpenCodeConfig,
+  PluginLogger,
+  ProviderConfig,
+} from "../types/index.ts"
+import {
+  DEFAULT_LM_STUDIO_URL,
+  autoDetectLMStudio,
+  discoverModels,
+  getLMStudioApiKey,
+  isGenerativeModel,
+  normalizeLMStudioURL,
+  toOpenAICompatibleURL,
+} from "../utils/lmstudio-api.ts"
 
-const modelStatusCache = new ModelStatusCache()
+export interface EnhanceConfigResult {
+  readonly discovered: number
+  readonly skippedEmbeddings: number
+  readonly skippedUnsupported: number
+  readonly serverURL: string
+}
 
-export async function enhanceConfig(
-  config: any,
-  _client: PluginInput['client'], // client not used but kept for interface compatibility
-  toastNotifier: ToastNotifier
-): Promise<void> {
+const MAX_OUTPUT_RESERVE = 8_192
+
+function getString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+export function toModelConfig(model: LMStudioModel & { type: "llm" | "vlm" }): ModelConfig {
+  const input: Array<"text" | "image"> = model.type === "vlm" ? ["text", "image"] : ["text"]
+
+  return {
+    id: model.id,
+    name: model.id,
+    attachment: model.type === "vlm",
+    modalities: {
+      input,
+      output: ["text"],
+    },
+    // LM Studio reports a shared context window but no separate output limit.
+    // Reserve a bounded quarter of that official window so OpenCode can use
+    // context-aware compaction without reserving the entire prompt budget.
+    ...(model.max_context_length ? {
+      limit: {
+        context: model.max_context_length,
+        output: Math.min(MAX_OUTPUT_RESERVE, Math.max(1, Math.floor(model.max_context_length / 4))),
+      },
+    } : {}),
+  }
+}
+
+function mergeProvider(
+  existing: ProviderConfig | undefined,
+  serverURL: string,
+  discoveredModels: Record<string, ModelConfig>,
+  apiKey?: string,
+): ProviderConfig {
+  return {
+    ...existing,
+    name: existing?.name ?? "LM Studio",
+    npm: existing?.npm ?? "@ai-sdk/openai-compatible",
+    options: {
+      ...existing?.options,
+      baseURL: toOpenAICompatibleURL(serverURL),
+      ...(apiKey && !existing?.options?.apiKey ? { apiKey } : {}),
+    },
+    // Explicit user configuration always wins over discovered metadata.
+    models: {
+      ...discoveredModels,
+      ...existing?.models,
+    },
+    ...(!existing?.whitelist?.length && Object.keys(discoveredModels).length > 0
+      ? { whitelist: Object.keys(discoveredModels) }
+      : {}),
+  }
+}
+
+/** Enrich the single documented `lmstudio` provider without guessing model capabilities. */
+export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): Promise<EnhanceConfigResult | undefined> {
+  const existing = config.provider?.lmstudio
+  const configuredBaseURL = getString(existing?.options?.baseURL)
+
   try {
-    let lmstudioProvider = config.provider?.lmstudio
-    let baseURL: string
-    let apiKey: string | undefined
-
-    // If lmstudio provider exists, use its baseURL
-    if (lmstudioProvider) {
-      baseURL = normalizeBaseURL(lmstudioProvider.options?.baseURL || "http://127.0.0.1:1234")
-      apiKey = getLMStudioApiKey(lmstudioProvider.options?.apiKey, baseURL)
-    } else {
-      // Try to auto-detect LM Studio
-      apiKey = getLMStudioApiKey()
-      const detectedURL = await autoDetectLMStudio(apiKey)
-      if (!detectedURL) {
-        return // No LM Studio found
-      }
-      
-      // Auto-create lmstudio provider if detected
-      baseURL = detectedURL
-      if (!config.provider) {
-        config.provider = {}
-      }
-      config.provider.lmstudio = {
-        npm: "@ai-sdk/openai-compatible",
-        name: "LM Studio (local)",
-        options: {
-          baseURL: `${baseURL}/v1`,
-          ...(apiKey ? { apiKey } : {}),
-        },
-        models: {},
-      }
-      lmstudioProvider = config.provider.lmstudio
-    }
-
-    // Check health first
-    const isHealthy = await checkLMStudioHealth(baseURL, apiKey)
-    if (!isHealthy) {
-      console.warn("[opencode-lmstudio] LM Studio appears to be offline", { baseURL })
-      return
-    }
-
-    // Try to discover models from LM Studio API
-    let models: LMStudioModel[]
-    try {
-      models = await discoverLMStudioModels(baseURL, apiKey)
-    } catch (error) {
-      console.warn("[opencode-lmstudio] Model discovery failed", { 
-        error: error instanceof Error ? error.message : String(error) 
+    const explicitApiKey = getString(existing?.options?.apiKey)
+    const detected = existing ? undefined : await autoDetectLMStudio()
+    if (!existing && !detected) {
+      await log("debug", "LM Studio model discovery unavailable", {
+        serverURL: DEFAULT_LM_STUDIO_URL,
       })
-      return
+      return undefined
     }
-    
-    if (models.length > 0) {
-      // Merge discovered models with configured models
-      const existingModels = lmstudioProvider.models || {}
-      const discoveredModels: Record<string, any> = {}
-      const visibleModelIds = new Set<string>()
-      const hasExplicitWhitelist = Array.isArray(lmstudioProvider.whitelist) && lmstudioProvider.whitelist.length > 0
-      let skippedEmbeddingModelsCount = 0
 
-      for (const model of models) {
-        const modelType = categorizeModel(model.id)
-        if (modelType === 'embedding') {
-          skippedEmbeddingModelsCount++
-          continue
-        }
+    const serverURL = normalizeLMStudioURL(configuredBaseURL ?? detected?.serverURL ?? DEFAULT_LM_STUDIO_URL)
+    const apiKey = existing ? getLMStudioApiKey(explicitApiKey, serverURL) : detected?.apiKey
+    const response = detected?.response ?? await discoverModels(serverURL, { apiKey })
+    const generative = response.data.filter(isGenerativeModel)
+    const discoveredModels = Object.fromEntries(
+      generative.map((model) => [model.id, toModelConfig(model)]),
+    )
 
-        // Use model ID as key directly for better readability, fallback to sanitized version
-        let modelKey = model.id
-        if (!/^[a-zA-Z0-9_-]+$/.test(modelKey)) {
-          modelKey = model.id.replace(/[^a-zA-Z0-9_-]/g, "_")
-        }
+    config.provider ??= {}
+    config.provider.lmstudio = mergeProvider(existing, serverURL, discoveredModels, apiKey)
 
-        visibleModelIds.add(modelKey)
-        visibleModelIds.add(model.id)
-        
-        // Only add if not already configured
-        if (!existingModels[modelKey] && !existingModels[model.id]) {
-          const owner = extractModelOwner(model.id)
-          const modelConfig: any = {
-            id: model.id,
-            name: formatModelName(model),
-            modalities: {
-              input: modelType === 'multimodal' ? ["text", "image"] : ["text"],
-              output: ["text"],
-            },
-          }
-          
-          // Add owner if available
-          if (owner) {
-            modelConfig.organizationOwner = owner
-          }
-
-          discoveredModels[modelKey] = modelConfig
-        }
-      }
-
-      if (skippedEmbeddingModelsCount > 0) {
-        console.log("[opencode-lmstudio] Skipped embedding models", {
-          count: skippedEmbeddingModelsCount,
-        })
-      }
-
-      // Merge discovered models into config
-      if (Object.keys(discoveredModels).length > 0) {
-        if (!config.provider.lmstudio) {
-          return
-        }
-        
-        config.provider.lmstudio.models = {
-          ...existingModels,
-          ...discoveredModels,
-        }
-      }
-
-      if (!hasExplicitWhitelist && visibleModelIds.size > 0) {
-        lmstudioProvider.whitelist = Array.from(visibleModelIds)
-      }
-    } else {
-      console.warn("[opencode-lmstudio] No models found in LM Studio. Please:", {
-        steps: [
-          "1. Open LM Studio application",
-          "2. Download and load a model",
-          "3. Start the server"
-        ]
-      })
+    const result = {
+      discovered: generative.length,
+      skippedEmbeddings: response.data.filter((model) => model.type === "embeddings").length,
+      skippedUnsupported: response.data.filter((model) => !isGenerativeModel(model) && model.type !== "embeddings").length,
+      serverURL,
     }
-    
-    // Warm up the cache with current model status
-    try {
-      await modelStatusCache.getModels(baseURL, async () => {
-        return await discoverLMStudioModels(baseURL, apiKey).then(models => models.map(m => m.id))
-      })
-    } catch {
-      // Cache warming failed, but not critical
-    }
+    await log("info", "Discovered LM Studio models", result)
+    return result
   } catch (error) {
-    console.error("[opencode-lmstudio] Unexpected error in enhanceConfig:", error)
-    toastNotifier.warning("Plugin configuration failed", "Configuration Error").catch(() => {})
+    const configured = Boolean(existing)
+    const serverURL = configuredBaseURL ?? DEFAULT_LM_STUDIO_URL
+    await log(configured ? "warn" : "debug", "LM Studio model discovery unavailable", {
+      serverURL,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return undefined
   }
 }

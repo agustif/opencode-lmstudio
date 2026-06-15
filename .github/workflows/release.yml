@@ -3,53 +3,146 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      version_type:
-        description: 'Version bump type'
+      version:
+        description: Exact package version already committed on main, without v
         required: true
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
-        default: patch
+        type: string
+      publish:
+        description: Publish npm and finalize the GitHub release
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24.15.0
+  BUN_VERSION: 1.3.9
+  VERSION: ${{ inputs.version }}
+  TAG: v${{ inputs.version }}
 
 jobs:
   release:
+    name: Validate and optionally publish
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-    
+    timeout-minutes: 30
+    environment: release
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-      
-      - name: Install dependencies
-        run: bun install
-      
-      - name: Configure npm for publishing
-        run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" >> ~/.npmrc
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      
-      - name: Run release script
-        run: bun scripts/release.ts ${{ inputs.version_type }}
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Validate release request
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "${GITHUB_REF_NAME}" = main
+          actual=$(node -p 'require("./package.json").version')
+          test "$actual" = "$VERSION" || {
+            echo "package.json is $actual, requested $VERSION" >&2
+            exit 1
+          }
+          test -f "docs/releases/v${VERSION}.md"
+          git diff --exit-code
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Core release preflight
+        run: npm run release:check
+
+      - name: Read latest tested OpenCode version
+        id: latest
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < .opencode-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup latest tested OpenCode
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.latest.outputs.version }}
+          cache: false
+
+      - name: Run real OpenCode CLI smoke
+        run: npm run smoke:opencode
+
+      - name: Read pinned TUI OpenCode version
+        id: tui
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < .opencode-tui-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pinned TUI OpenCode
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.tui.outputs.version }}
+          cache: false
+
+      - name: Run Microsoft TUI Test and verify screenshots
+        run: npm run test:tui:check
+
+      - name: Preview package
+        run: npm pack --json > package-preview.json
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ inputs.version }}
+          path: |
+            coverage/
+            docs/screenshots/
+            package-preview.json
+            tui-traces/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Ensure release does not already exist
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists" >&2
+            exit 1
+          fi
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists" >&2
+            exit 1
+          fi
+
+      - name: Stage draft GitHub release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$TAG"
+          --target "$GITHUB_SHA"
+          --title "opencode-lmstudio $TAG"
+          --notes-file "docs/releases/v${VERSION}.md"
+          --draft
+
+      - name: Publish npm package with provenance
+        if: inputs.publish
+        run: npm publish --provenance --access public
+
+      - name: Finalize GitHub release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false --latest

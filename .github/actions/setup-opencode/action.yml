@@ -1,0 +1,69 @@
+name: Setup OpenCode
+description: Install and cache a pinned OpenCode CLI release
+
+inputs:
+  version:
+    description: OpenCode version without the leading v
+    required: true
+  cache:
+    description: Cache the installed binary; disable when switching versions in one job
+    required: false
+    default: "true"
+
+outputs:
+  binary:
+    description: Absolute path to the OpenCode binary
+    value: ${{ steps.verify.outputs.binary }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate requested version
+      shell: bash
+      env:
+        OPENCODE_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        [[ "$OPENCODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+          echo "Expected an exact OpenCode version, got: $OPENCODE_VERSION" >&2
+          exit 1
+        }
+
+    # Mirrors the install/cache portion of anomalyco/opencode/github while
+    # allowing CI to pin a known compatibility version.
+    - name: Cache OpenCode
+      id: cache
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.opencode/bin
+        key: opencode-${{ runner.os }}-${{ runner.arch }}-${{ inputs.version }}
+
+    - name: Install OpenCode
+      if: inputs.cache != 'true' || steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        OPENCODE_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        rm -rf "$HOME/.opencode/bin"
+        curl --fail --silent --show-error --location https://opencode.ai/install \
+          | bash -s -- --version "$OPENCODE_VERSION" --no-modify-path
+
+    - name: Export and verify OpenCode
+      id: verify
+      shell: bash
+      env:
+        OPENCODE_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        binary="$HOME/.opencode/bin/opencode"
+        test -x "$binary"
+        actual="$($binary --version)"
+        test "$actual" = "$OPENCODE_VERSION" || {
+          echo "Expected OpenCode $OPENCODE_VERSION, got $actual" >&2
+          exit 1
+        }
+        echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+        echo "OPENCODE_BIN=$binary" >> "$GITHUB_ENV"
+        echo "binary=$binary" >> "$GITHUB_OUTPUT"

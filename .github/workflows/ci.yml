@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24.15.0
+  BUN_VERSION: 1.3.9
+
+jobs:
+  quality:
+    name: Quality and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:run
+
+      - name: Coverage
+        run: npm run test:coverage
+
+      - name: Clean build
+        run: npm run build
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Package preview
+        run: npm pack --dry-run
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  latest-opencode-smoke:
+    name: Latest OpenCode smoke
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read latest compatibility version
+        id: version
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < .opencode-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup latest tested OpenCode
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.version.outputs.version }}
+
+      - name: Run real OpenCode CLI smoke
+        run: npm run smoke:opencode
+
+  pinned-opencode-tui:
+    name: Pinned OpenCode TUI and screenshots
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read TUI compatibility version
+        id: version
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < .opencode-tui-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pinned TUI OpenCode
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.version.outputs.version }}
+
+      - name: Run Microsoft TUI Test and verify generated screenshots
+        run: npm run test:tui:check
+
+      - name: Upload TUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-evidence
+          path: |
+            docs/screenshots/
+            tui-traces/
+          if-no-files-found: warn
+          retention-days: 14
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

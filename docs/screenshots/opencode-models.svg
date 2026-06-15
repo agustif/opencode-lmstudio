@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="910" height="706" viewBox="0 0 910 706" role="img" aria-labelledby="title desc">
+  <title id="title">Discovered LM Studio models</title>
+  <desc id="desc">OpenCode terminal captured by Microsoft TUI Test</desc>
+  <rect width="100%" height="100%" rx="12" fill="#0b0d10"/>
+  <circle cx="22" cy="21" r="5" fill="#ff5f57"/>
+  <circle cx="38" cy="21" r="5" fill="#febc2e"/>
+  <circle cx="54" cy="21" r="5" fill="#28c840"/>
+  <text x="455" y="26" text-anchor="middle" fill="#9aa4b2" font-family="ui-sans-serif, system-ui" font-size="13">Discovered LM Studio models</text>
+  <g fill="#e6edf3" font-family="SFMono-Regular, Consolas, Liberation Mono, monospace" font-size="14">
+  <text x="24" y="62" xml:space="preserve">╭────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+  <text x="24" y="82" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="102" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="122" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="142" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="162" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="182" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="202" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="222" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="242" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="262" xml:space="preserve">│                        Select model                                     esc                        │</text>
+  <text x="24" y="282" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="302" xml:space="preserve">│                        google/gemma-4-12b                                                          │</text>
+  <text x="24" y="322" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="342" xml:space="preserve">│                        google/gemma-4-12b                LM Studio TUI Test                        │</text>
+  <text x="24" y="362" xml:space="preserve">│             ┃                                                                                      │</text>
+  <text x="24" y="382" xml:space="preserve">│             ┃  Ask                                                                                 │</text>
+  <text x="24" y="402" xml:space="preserve">│             ┃          Connect provider ctrl+a  Favorite ctrl+f                                    │</text>
+  <text x="24" y="422" xml:space="preserve">│             ┃  Buil                                                                                │</text>
+  <text x="24" y="442" xml:space="preserve">│             ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀            │</text>
+  <text x="24" y="462" xml:space="preserve">│                                                             tab agents  ctrl+p commands            │</text>
+  <text x="24" y="482" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="502" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="522" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="542" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="562" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="582" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="602" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="622" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="642" xml:space="preserve">│  /tmp/opencode-lmstudio-tui                                                                1.15.0  │</text>
+  <text x="24" y="662" xml:space="preserve">│                                                                                                    │</text>
+  <text x="24" y="682" xml:space="preserve">╰────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
+  </g>
+</svg>

@@ -7,4 +7,6 @@ dist/
 opencode-debug.log
 .cache/
 coverage/
+.tui-test/
+tui-traces/
 

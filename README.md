@@ -1,73 +1,75 @@
 # opencode-lmstudio
 
-OpenCode plugin for enhanced LM Studio support with auto-detection, dynamic model discovery, and API key authentication.
+Typed LM Studio model discovery for OpenCode.
+
+The plugin enriches OpenCode's `lmstudio` provider from LM Studio's official
+`GET /api/v0/models` metadata. It does **not** infer model type or capabilities
+from model names.
 
 ## Features
 
-- **Auto-detection**: Automatically detects LM Studio running on common ports (1234, 8080, 11434)
-- **Dynamic Model Discovery**: Queries LM Studio's `/v1/models` endpoint to discover available models
-- **API Key Authentication**: Supports LM Studio servers that require Bearer token authentication
-- **Embedding Model Filtering**: Skips embedding-only models in OpenCode's chat model list
-- **Loaded Model Whitelist**: Limits the LM Studio provider list to discovered, non-embedding models unless you configure your own whitelist
-- **Multimodal Metadata**: Marks recognized vision/multimodal LLMs with text and image input support
-- **Smart Model Formatting**: Automatically formats model names for better readability (e.g., "Qwen3 30B A3B" instead of "qwen/qwen3-30b-a3b")
-- **Organization Owner Extraction**: Extracts and sets `organizationOwner` field from model IDs
-- **Health Check Monitoring**: Verifies LM Studio is accessible before attempting operations
-- **Automatic Configuration**: Auto-creates `lmstudio` provider if detected but not configured
-- **Model Merging**: Intelligently merges discovered models with existing configuration
-- **Comprehensive Caching**: Reduces API calls with intelligent caching system
-- **Error Handling**: Smart error categorization with auto-fix suggestions
+- **Contract-based model discovery** through LM Studio's metadata-rich REST API
+- **No model-name heuristics** or hard-coded model-family registries
+- **Safe auto-detection** on the historical ports `1234`, `8080`, and `11434`;
+  a port is accepted only when its `/api/v0/models` response validates
+- **API key authentication** from provider configuration, `{env:NAME}` syntax,
+  or the private-network-only `LMSTUDIO_API_KEY` / `LM_API_TOKEN` fallback
+- **Embedding filtering** based on LM Studio's explicit `type` field
+- **Vision metadata** for models explicitly reported as `vlm`
+- **Context limits** from `max_context_length` when LM Studio reports it, with
+  a bounded output reserve that keeps OpenCode compaction usable
+- **Discovered-model whitelist** while preserving an explicit user whitelist
+- **User override preservation**: configured model entries win over discovery
+- **Structured OpenCode logging** through `client.app.log`
+- **JIT loading compatibility**: no pre-request loaded-model checks block LM
+  Studio from loading a downloaded model on demand
+
+## Requirements
+
+- A current OpenCode release compatible with `@opencode-ai/plugin` 1.17.x
+- LM Studio 0.3.6 or newer with the local server enabled
+- Node.js compatible with the package dependency graph
+
+LM Studio documents `/api/v0/models` as a beta REST endpoint. It is used because
+it reports `type`, `state`, and `max_context_length`. The OpenAI-compatible
+`/v1/models` endpoint does not report enough metadata to distinguish chat,
+vision, and embedding models safely, so this plugin intentionally does not use
+it as a discovery fallback.
 
 ## Installation
 
-```zsh
+```sh
 npm install opencode-lmstudio
 # or
 bun add opencode-lmstudio
 ```
 
-Use a versioned plugin spec in `opencode.json`. Replace `0.3.1` with the released version you installed. This creates a version-specific OpenCode plugin cache entry and avoids reusing a stale `@latest` cache after upgrades.
-
-## Usage
-
-Add the plugin to your `opencode.json`:
+Pin a released version in `opencode.json` so OpenCode does not reuse a stale
+`@latest` plugin cache:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "opencode-lmstudio@0.3.1"
-  ],
-  "provider": {
-    "lmstudio": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "LM Studio (local)",
-      "options": {
-        "baseURL": "http://127.0.0.1:1234/v1"
-      }
-    }
-  }
+  "plugin": ["opencode-lmstudio@1.0.0"]
 }
 ```
 
-### Auto-detection
+When no provider is configured, the plugin probes the historical local ports
+and creates `provider.lmstudio` only after receiving a valid LM Studio response.
 
-If you don't configure the `lmstudio` provider, the plugin will automatically detect LM Studio if it's running on one of the common ports and create the provider configuration for you.
+## Explicit provider configuration
 
-### API Key Authentication
-
-If your LM Studio server requires authentication, provide the token through the provider configuration:
+Explicit configuration is recommended for remote servers, custom ports, and
+servers requiring authentication:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "opencode-lmstudio@0.3.1"
-  ],
+  "plugin": ["opencode-lmstudio@1.0.0"],
   "provider": {
     "lmstudio": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "LM Studio (local)",
+      "name": "LM Studio",
       "options": {
         "baseURL": "http://127.0.0.1:1234/v1",
         "apiKey": "{env:LMSTUDIO_API_KEY}"
@@ -77,39 +79,25 @@ If your LM Studio server requires authentication, provide the token through the 
 }
 ```
 
-Then start OpenCode from a shell where the environment variable is available:
+The plugin removes a trailing `/v1` only when calling LM Studio's metadata API,
+then keeps `/v1` on the OpenCode provider URL.
 
-```zsh
-export LMSTUDIO_API_KEY="your-lm-studio-token"
-opencode
-```
+### Model overrides
 
-For compatibility, the plugin also checks `LM_API_TOKEN` when no `apiKey` is configured.
-
-Environment-variable fallback is only used for local or private-network LM Studio URLs such as `localhost`, `127.0.0.1`, `192.168.x.x`, `10.x.x.x`, `172.16.x.x` through `172.31.x.x`, IPv4 link-local addresses, IPv6 local/private IP literals such as `[::1]`, `[fc00::1]`, `[fd00::1]`, and `[fe80::1]`, and `.local` hostnames. Public DNS hostnames are not treated as private just because they start with `fc`, `fd`, or `fe80`. For public or hosted endpoints, configure `options.apiKey` explicitly, for example with `{env:LMSTUDIO_API_KEY}`. This avoids accidentally sending a local LM Studio token to an unintended public URL.
-
-The plugin intentionally does not fall back to `OPENAI_API_KEY`. LM Studio can run on a local network host, and reusing a cloud OpenAI key for a local/LAN endpoint would be easy to do accidentally.
-
-### Manual Configuration
-
-You can also manually configure the provider with specific models:
+Discovered metadata is merged before explicit model configuration, so user
+values take precedence:
 
 ```json
 {
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "opencode-lmstudio@0.3.1"
-  ],
   "provider": {
     "lmstudio": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "LM Studio (local)",
-      "options": {
-        "baseURL": "http://127.0.0.1:1234/v1"
-      },
       "models": {
-        "google/gemma-3n-e4b": {
-          "name": "Gemma 3n-e4b (local)"
+        "publisher/model-id": {
+          "name": "My local model",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
         }
       }
     }
@@ -117,90 +105,108 @@ You can also manually configure the provider with specific models:
 }
 ```
 
-The plugin will automatically discover and add any additional models available in LM Studio that aren't already configured.
+An explicit `whitelist` is also preserved. Otherwise, the plugin creates one
+from discovered non-embedding model IDs.
 
-Embedding-only models are skipped because OpenCode's chat model configuration does not support an embedding output modality. When you do not configure your own `provider.lmstudio.whitelist`, the plugin sets one from the discovered non-embedding models. This hides OpenCode's built-in LM Studio defaults when they are not actually returned by LM Studio. Recognized multimodal model IDs, such as vision, VL, omni, LLaVA, Pixtral, and Gemma 3/4 variants, are registered with text and image input support. Other discovered LLMs are registered as text-in/text-out models.
+## Automated OpenCode screenshots
 
-## Testing Unpublished Changes
+The checked-in screenshots below are generated by the real OpenCode TUI running
+under Microsoft's `@microsoft/tui-test`. The TUI talks over HTTP to a sanitized,
+recorded LM Studio `/api/v0/models` fixture captured from a local installation.
+CI uses the checked-in fixture, so screenshots and assertions remain repeatable.
 
-When testing an unpublished change, avoid using only the package name in `opencode.json`:
+![OpenCode home with an LM Studio model](./docs/screenshots/opencode-home.svg)
 
-```json
-"plugin": [
-  "opencode-lmstudio"
-]
+![Discovered LM Studio models](./docs/screenshots/opencode-models.svg)
+
+Refresh the sanitized model fixture and generated screenshots when needed:
+
+```sh
+npm run fixture:capture
+npm run test:tui:update
 ```
 
-OpenCode resolves package-name plugin specs through its package/plugin cache and npm resolution path. Unqualified names such as `opencode-lmstudio` use OpenCode's `@latest` cache slot, which can keep loading a stale package after an upgrade. Published releases should therefore use a versioned spec such as `opencode-lmstudio@0.3.1`.
+Use `npm run fixture:capture:api` when a real LM Studio server is already
+running. The capture script removes local paths, sizes, and variant metadata.
 
-To test an unpublished change in a release-like way without pointing OpenCode directly at the repository checkout, create a package tarball:
+## Design decisions
 
-```zsh
-mkdir -p ~/.config/opencode/packages
-npm pack --pack-destination ~/.config/opencode/packages
+### Why the REST API instead of `@lmstudio/sdk`?
+
+The official SDK is strongly typed, but it connects over `ws`/`wss` and uses an
+SDK-specific client authentication channel. OpenCode's provider is configured
+for the HTTP server and its Bearer token. Using the official REST contract keeps
+model discovery on the same endpoint, reverse-proxy path, and authentication
+boundary as OpenCode requests while runtime validation supplies the TypeScript
+boundary.
+
+### Why embedding models are omitted
+
+OpenCode's chat-model configuration accepts text, audio, image, video, and PDF
+modalities; it has no embedding output modality. Registering an embedding model
+as a chat model can fail config validation or fail at request time. Embeddings
+are therefore skipped from this chat provider based only on LM Studio's explicit
+`type: "embeddings"` metadata.
+
+### Why no loaded-model guard exists
+
+LM Studio can JIT-load downloaded models. Rejecting a request because a model is
+not already loaded prevents that supported flow. Discovery runs during config
+loading; OpenCode and LM Studio own request execution, retries, and JIT loading.
+
+## Validation and troubleshooting
+
+Run the complete repository validation:
+
+```sh
+npm run validate
 ```
 
-The package build emits JavaScript into `dist/` and the published package exports `dist/index.js`. This matters for the desktop app: packaged OpenCode runs under Node and cannot strip TypeScript from plugin files located under `node_modules`.
+Validate an OpenCode configuration with OpenCode's own parser:
 
-Then reference the generated tarball from `opencode.json`:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "file:/Users/your-user/.config/opencode/packages/opencode-lmstudio-0.3.1.tgz"
-  ],
-  "provider": {
-    "lmstudio": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "LM Studio (local)",
-      "options": {
-        "baseURL": "http://127.0.0.1:1234/v1",
-        "apiKey": "{env:LMSTUDIO_API_KEY}"
-      },
-      "models": {}
-    }
-  }
-}
+```sh
+npm run validate:config -- /path/to/opencode.json
 ```
 
-Verify which plugin artifact OpenCode loaded:
+Or inspect the resolved configuration directly:
 
-```zsh
-opencode models lmstudio --print-logs --log-level DEBUG
+```sh
+OPENCODE_CONFIG=/path/to/opencode.json opencode debug config
 ```
 
-For a tarball-based local test, the logs should include a plugin path beginning with `file:` and should report the discovered model count. Published releases log the loaded plugin version on startup:
+If discovery fails for an explicitly configured provider, the plugin leaves the
+existing configuration intact and writes a structured warning through OpenCode.
+When no provider is configured and no local LM Studio server is found, it logs a
+debug event and makes no configuration changes.
 
-```text
-[opencode-lmstudio] LM Studio plugin initialized { version: "0.3.1" }
+## Development
+
+```sh
+npm install
+npm run validate
+npm run test:coverage
+npm run smoke:opencode
+npm run test:tui
+npm pack --dry-run
 ```
 
-After publishing the patched package to npm, switch the plugin entry to the exact released version, for example `opencode-lmstudio@0.3.1`. Avoid `opencode-lmstudio` and `opencode-lmstudio@latest` for upgrade verification because both can reuse OpenCode's stale `@latest` plugin cache.
+`smoke:opencode` starts an isolated mock LM Studio HTTP server and runs the real
+installed `opencode` binary through config resolution and a chat request. It
+verifies plugin loading, typed discovery, embedding filtering, vision metadata,
+Bearer authentication, and OpenAI-compatible request routing.
 
-## How It Works
+`test:tui` uses Microsoft's `@microsoft/tui-test` with a real PTY and headless
+xterm renderer. It starts the real installed OpenCode TUI against an isolated
+LM Studio fixture and auto-waits for the prompt, selected model, and provider
+label. Traces are recorded in the ignored `tui-traces/` directory for replay.
+The TUI screenshot lane uses the compatibility version pinned in
+`.opencode-tui-version`; the separate CLI smoke lane tests the current version
+pinned in `.opencode-version`.
 
-1. On OpenCode startup, the plugin's `config` hook is called
-2. If an `lmstudio` provider is found, it checks if LM Studio is accessible
-3. If not configured, it attempts to auto-detect LM Studio on common ports
-4. If accessible, it queries the `/v1/models` endpoint
-5. If an API key is configured, discovery and runtime validation requests include `Authorization: Bearer <token>`
-6. Embedding-only models are skipped from the chat model list
-7. Discovered LLMs are merged into your configuration with OpenCode-compatible modality metadata
-8. If no explicit LM Studio whitelist exists, the plugin whitelists the discovered non-embedding models so stale built-in defaults stay hidden
-9. The enhanced configuration is used for the current session
-
-## Requirements
-
-- OpenCode with plugin support
-- LM Studio running locally or on a configured network host
-- LM Studio server API accessible at `http://127.0.0.1:1234/v1` or your configured `baseURL`
-- Optional: `LMSTUDIO_API_KEY` or `LM_API_TOKEN` when LM Studio requires Bearer token authentication
+`npm run release` is deliberately a preflight-only command. It validates, audits,
+and previews the package but never changes versions, commits, tags, pushes,
+creates a GitHub release, or publishes npm. See [RELEASE.md](./RELEASE.md).
 
 ## License
 
 MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
