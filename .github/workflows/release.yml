@@ -138,6 +138,7 @@ jobs:
           --draft
 
       - name: Publish npm package with provenance
+        id: publish
         if: inputs.publish
         run: npm publish --provenance --access public
 
@@ -146,3 +147,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$TAG" --draft=false --latest
+
+      - name: Remove staged release after npm publish failure
+        if: failure() && steps.publish.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "$TAG" --yes --cleanup-tag
