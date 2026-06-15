@@ -1,652 +1,229 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { LMStudioPlugin } from '../src/index.ts'
-import { discoverLMStudioModels, getLMStudioApiKey } from '../src/utils/lmstudio-api.ts'
+import { afterEach, describe, expect, it, vi } from "vitest"
+import type { PluginInput } from "@opencode-ai/plugin"
+import { LMStudioPlugin } from "../src/index.ts"
+import type { OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
+import { enhanceConfig } from "../src/plugin/enhance-config.ts"
+import {
+  LMStudioAPIError,
+  autoDetectLMStudio,
+  discoverModels,
+  getLMStudioApiKey,
+  isLocalOrPrivateURL,
+  normalizeLMStudioURL,
+  toModelsURL,
+  toOpenAICompatibleURL,
+} from "../src/utils/lmstudio-api.ts"
 
-// Mock fetch globally
-const mockFetch = vi.fn()
-global.fetch = mockFetch
+function model(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "publisher/model",
+    object: "model",
+    type: "llm",
+    publisher: "publisher",
+    arch: "qwen3",
+    compatibility_type: "gguf",
+    quantization: "Q4_K_M",
+    state: "not-loaded",
+    max_context_length: 32_768,
+    ...overrides,
+  }
+}
 
-// Mock AbortSignal.timeout for older Node versions
-if (!global.AbortSignal.timeout) {
-  global.AbortSignal.timeout = vi.fn(() => {
-    const controller = new AbortController()
-    setTimeout(() => controller.abort(), 3000)
-    return controller.signal
+function modelsResponse(data: Array<Record<string, unknown>>) {
+  return new Response(JSON.stringify({ object: "list", data }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
   })
 }
 
-describe('LMStudio Plugin', () => {
-  let mockClient: any
-  let pluginHooks: any
+function config(value: OpenCodeConfig = {}): OpenCodeConfig {
+  return value
+}
 
-  beforeEach(async () => {
-    // Reset fetch mock
-    mockFetch.mockClear()
-    
-    // Mock client
-    mockClient = {
-      tui: {
-        showToast: vi.fn().mockResolvedValue(true)
-      }
-    }
-    
-    // Mock minimal PluginInput - just cast to any for simplicity in tests
-    const mockInput: any = {
-      client: mockClient,
-      project: { 
-        id: 'test-project',
-        name: 'test', 
-        path: '/tmp',
-        worktree: '',
-        time: { created: Date.now() }
+function logger(): PluginLogger {
+  return vi.fn(async () => undefined)
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  delete process.env.LMSTUDIO_API_KEY
+  delete process.env.LM_API_TOKEN
+  delete process.env.CUSTOM_LM_STUDIO_KEY
+})
+
+describe("LM Studio API", () => {
+  it("normalizes provider URLs without guessing ports or hosts", () => {
+    expect(normalizeLMStudioURL("http://127.0.0.1:1234/v1/")).toBe("http://127.0.0.1:1234")
+    expect(toOpenAICompatibleURL("https://models.example.test/v1")).toBe("https://models.example.test/v1")
+    expect(toModelsURL("https://models.example.test/v1")).toBe("https://models.example.test/api/v0/models")
+  })
+
+  it("rejects unsupported URL protocols", () => {
+    expect(() => normalizeLMStudioURL("ws://127.0.0.1:1234")).toThrow(LMStudioAPIError)
+  })
+
+  it("uses the metadata-rich endpoint and forwards an explicit API key", async () => {
+    const fetcher = vi.fn(async () => modelsResponse([model()]))
+
+    const response = await discoverModels("https://models.example.test/v1", {
+      apiKey: "secret",
+      fetch: fetcher as typeof fetch,
+    })
+
+    expect(response.data).toHaveLength(1)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://models.example.test/api/v0/models",
+      expect.objectContaining({ headers: { Authorization: "Bearer secret" } }),
+    )
+  })
+
+  it("rejects responses that omit official model metadata", async () => {
+    const fetcher = vi.fn(async () => modelsResponse([{ id: "unknown/model" }]))
+
+    await expect(discoverModels("http://127.0.0.1:1234", {
+      fetch: fetcher as typeof fetch,
+    })).rejects.toThrow("unsupported response")
+  })
+
+  it("auto-detects historical ports only after validating the official response", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response("not LM Studio", { status: 200 }))
+      .mockResolvedValueOnce(modelsResponse([model()]))
+    vi.stubGlobal("fetch", fetcher)
+
+    const detected = await autoDetectLMStudio()
+
+    expect(detected?.serverURL).toBe("http://127.0.0.1:8080")
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it("preserves private-network API-key fallback without leaking it to public hosts", () => {
+    process.env.LMSTUDIO_API_KEY = "private-token"
+    process.env.CUSTOM_LM_STUDIO_KEY = "explicit-token"
+
+    expect(isLocalOrPrivateURL("http://127.0.0.1:1234/v1")).toBe(true)
+    expect(isLocalOrPrivateURL("http://192.168.1.10:1234/v1")).toBe(true)
+    expect(isLocalOrPrivateURL("http://[::1]:1234/v1")).toBe(true)
+    expect(isLocalOrPrivateURL("https://models.example.test/v1")).toBe(false)
+    expect(getLMStudioApiKey(undefined, "http://127.0.0.1:1234")).toBe("private-token")
+    expect(getLMStudioApiKey(undefined, "https://models.example.test")).toBeUndefined()
+    expect(getLMStudioApiKey("{env:CUSTOM_LM_STUDIO_KEY}", "https://models.example.test")).toBe("explicit-token")
+  })
+})
+
+describe("config enhancement", () => {
+  it("registers only typed generative models and skips embeddings", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
+      model({ id: "plain-model-with-no-family-name" }),
+      model({ id: "vision/model", type: "vlm", max_context_length: 65_536 }),
+      model({ id: "embedding/model", type: "embeddings" }),
+      model({ id: "future/model", type: "future-domain" }),
+    ])))
+    const value = config()
+
+    const result = await enhanceConfig(value, logger())
+
+    expect(result).toMatchObject({ discovered: 2, skippedEmbeddings: 1, skippedUnsupported: 1 })
+    expect(value.provider?.lmstudio?.options?.baseURL).toBe("http://127.0.0.1:1234/v1")
+    expect(value.provider?.lmstudio?.models).toEqual({
+      "plain-model-with-no-family-name": expect.objectContaining({
+        id: "plain-model-with-no-family-name",
+        name: "plain-model-with-no-family-name",
+        modalities: { input: ["text"], output: ["text"] },
+        limit: { context: 32_768, output: 8_192 },
+      }),
+      "vision/model": expect.objectContaining({
+        modalities: { input: ["text", "image"], output: ["text"] },
+        limit: { context: 65_536, output: 8_192 },
+      }),
+    })
+    expect(value.provider?.lmstudio?.whitelist).toEqual([
+      "plain-model-with-no-family-name",
+      "vision/model",
+    ])
+  })
+
+  it("omits limits when LM Studio does not report an official context length", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model({ max_context_length: undefined })])))
+    const value = config()
+
+    await enhanceConfig(value, logger())
+
+    expect(value.provider?.lmstudio?.models?.["publisher/model"]).not.toHaveProperty("limit")
+  })
+
+  it("preserves explicit user model overrides", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model()])))
+    const value = config({
+      provider: {
+        lmstudio: {
+          options: { baseURL: "https://models.example.test/v1", apiKey: "secret" },
+          models: {
+            "publisher/model": { name: "My explicit name", limit: { context: 4_096, output: 1_024 } },
+          },
+          whitelist: ["publisher/model"],
+        },
       },
-      directory: '/tmp',
-      worktree: '',
-      $: vi.fn()
-    }
-    
-    pluginHooks = await LMStudioPlugin(mockInput)
+    })
+
+    await enhanceConfig(value, logger())
+
+    expect(value.provider?.lmstudio?.models?.["publisher/model"]).toEqual({
+      name: "My explicit name",
+      limit: { context: 4_096, output: 1_024 },
+    })
+    expect(value.provider?.lmstudio?.whitelist).toEqual(["publisher/model"])
+    expect(fetch).toHaveBeenCalledWith(
+      "https://models.example.test/api/v0/models",
+      expect.objectContaining({ headers: { Authorization: "Bearer secret" } }),
+    )
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-    delete process.env.LMSTUDIO_API_KEY
-    delete process.env.LM_API_TOKEN
-    delete process.env.CUSTOM_LM_STUDIO_KEY
+  it("leaves config unchanged when the default LM Studio server is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline") }))
+    const value = config()
+    const log = logger()
+
+    await expect(enhanceConfig(value, log)).resolves.toBeUndefined()
+
+    expect(value).toEqual({})
+    expect(log).toHaveBeenCalledWith("debug", "LM Studio model discovery unavailable", expect.any(Object))
   })
+})
 
-  describe('LM Studio API Authentication', () => {
-    it('should resolve api keys from OpenCode env syntax', () => {
-      process.env.CUSTOM_LM_STUDIO_KEY = 'test-token'
+describe("plugin entrypoint", () => {
+  it("returns the config hook and uses OpenCode structured logging", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model()])))
+    const appLog = vi.fn(async () => ({ data: true }))
+    const input = {
+      client: { app: { log: appLog } },
+    } as unknown as PluginInput
 
-      expect(getLMStudioApiKey('{env:CUSTOM_LM_STUDIO_KEY}')).toBe('test-token')
-    })
+    const hooks = await LMStudioPlugin(input)
+    const value = config()
+    await hooks.config?.(value)
 
-    it('should fall back to LM Studio-specific environment variables', () => {
-      process.env.LM_API_TOKEN = 'legacy-token'
-      process.env.LMSTUDIO_API_KEY = 'preferred-token'
-
-      expect(getLMStudioApiKey()).toBe('preferred-token')
-    })
-
-    it('should only use environment fallback for local or private LM Studio URLs', () => {
-      process.env.LMSTUDIO_API_KEY = 'private-token'
-
-      expect(getLMStudioApiKey(undefined, 'http://127.0.0.1:1234/v1')).toBe('private-token')
-      expect(getLMStudioApiKey(undefined, 'http://192.168.0.10:1234/v1')).toBe('private-token')
-      expect(getLMStudioApiKey(undefined, 'http://[::1]:1234/v1')).toBe('private-token')
-      expect(getLMStudioApiKey(undefined, 'http://[fc00::1]:1234/v1')).toBe('private-token')
-      expect(getLMStudioApiKey(undefined, 'http://[fd00::1]:1234/v1')).toBe('private-token')
-      expect(getLMStudioApiKey(undefined, 'http://[fe80::1]:1234/v1')).toBe('private-token')
-      expect(getLMStudioApiKey(undefined, 'http://[febf::1]:1234/v1')).toBe('private-token')
-      expect(getLMStudioApiKey(undefined, 'https://example.com/v1')).toBeUndefined()
-      expect(getLMStudioApiKey(undefined, 'https://fcorp.example/v1')).toBeUndefined()
-      expect(getLMStudioApiKey(undefined, 'https://fdservice.example/v1')).toBeUndefined()
-      expect(getLMStudioApiKey(undefined, 'https://fe80-models.example/v1')).toBeUndefined()
-      expect(getLMStudioApiKey(undefined, 'http://[fec0::1]:1234/v1')).toBeUndefined()
-    })
-
-    it('should allow explicitly configured env syntax for non-private URLs', () => {
-      process.env.CUSTOM_LM_STUDIO_KEY = 'explicit-token'
-
-      expect(getLMStudioApiKey('{env:CUSTOM_LM_STUDIO_KEY}', 'https://example.com/v1')).toBe('explicit-token')
-    })
-
-    it('should send bearer auth headers during model discovery', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'auth-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      await discoverLMStudioModels('http://127.0.0.1:1234/v1', 'explicit-token')
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://127.0.0.1:1234/v1/models',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer explicit-token'
-          })
-        })
-      )
-    })
-
-    it('should not send environment fallback auth headers to public URLs', async () => {
-      process.env.LMSTUDIO_API_KEY = 'private-token'
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'public-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      await discoverLMStudioModels('https://example.com/v1')
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://example.com/v1/models',
-        expect.objectContaining({
-          headers: expect.not.objectContaining({
-            Authorization: expect.any(String)
-          })
-        })
-      )
+    expect(hooks.config).toBeTypeOf("function")
+    expect(value.provider?.lmstudio?.models?.["publisher/model"]).toBeDefined()
+    expect(appLog).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        service: "opencode-lmstudio",
+        level: "info",
+        message: "LM Studio plugin initialized",
+      }),
     })
   })
 
-  describe('Plugin Initialization', () => {
-    it('should log the package version during initialization', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
+  it("does not let logging failures block configuration", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model()])))
+    const input = {
+      client: { app: { log: vi.fn(async () => { throw new Error("logging unavailable") }) } },
+    } as unknown as PluginInput
 
-      await LMStudioPlugin(mockInput)
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        '[opencode-lmstudio] LM Studio plugin initialized',
-        expect.objectContaining({
-          version: expect.any(String)
-        })
-      )
-    })
-
-    it('should initialize successfully with valid client', async () => {
-      const mockInput: any = {
-        client: mockClient,
-        project: { 
-          id: 'test-project',
-          name: 'test', 
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-      const hooks = await LMStudioPlugin(mockInput)
-      expect(hooks).toBeDefined()
-      expect(hooks.config).toBeTypeOf('function')
-      expect(hooks.event).toBeTypeOf('function')
-      expect(hooks['chat.params']).toBeTypeOf('function')
-    })
-
-    it('should handle invalid client gracefully', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const mockInput: any = {
-        client: null,
-        project: { 
-          id: 'test-project',
-          name: 'test', 
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-      const hooks = await LMStudioPlugin(mockInput)
-      
-      expect(hooks.config).toBeTypeOf('function')
-      expect(hooks.event).toBeTypeOf('function')
-      expect(hooks['chat.params']).toBeTypeOf('function')
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-lmstudio] Invalid client provided to plugin')
-      
-      consoleSpy.mockRestore()
-    })
-  })
-
-  describe('Config Hook', () => {
-    it('should validate config and reject invalid configurations', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      
-      await pluginHooks.config(null)
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-lmstudio] Invalid config provided:', expect.arrayContaining(['Config must be an object']))
-      
-      consoleSpy.mockRestore()
-    })
-
-    it('should handle empty config gracefully', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-      
-      await pluginHooks.config({})
-      // Should not throw error
-      expect(true).toBe(true)
-      
-      consoleSpy.mockRestore()
-    })
-
-    it('should auto-detect LM Studio when not configured', async () => {
-      // Mock successful health check on default port
-      mockFetch.mockResolvedValueOnce({
-        ok: true
-      })
-
-      // Mock models response
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'test-model-1', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'test-model-2', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      const config: any = {}
-      await pluginHooks.config(config)
-
-      expect(config.provider?.lmstudio).toBeDefined()
-      expect(config.provider?.lmstudio?.npm).toBe('@ai-sdk/openai-compatible')
-      expect(config.provider?.lmstudio?.options?.baseURL).toBe('http://127.0.0.1:1234/v1')
-    })
-
-    it('should merge discovered models with existing config', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'new-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      const config: any = {
-        provider: {
-          lmstudio: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'LM Studio (local)',
-            options: { baseURL: 'http://127.0.0.1:1234/v1' },
-            models: {
-              'existing-model': { name: 'Existing Model' }
-            }
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      expect(config.provider.lmstudio.models).toEqual({
-        'existing-model': { name: 'Existing Model' },
-        'new-model': expect.objectContaining({
-          id: 'new-model',
-          name: 'New Model'
-        })
-      })
-    })
-
-    it('should generate the whitelist from discovered models instead of stale defaults', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'qwen/qwen3-coder-next', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      const config: any = {
-        provider: {
-          lmstudio: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'LM Studio (local)',
-            options: { baseURL: 'http://127.0.0.1:1234/v1' },
-            models: {
-              'gpt-oss-20b': { name: 'GPT OSS 20B' },
-              'qwen3-30b-a3b-2507': { name: 'Qwen3 30B A3B 2507' }
-            }
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      expect(config.provider.lmstudio.models).toEqual(expect.objectContaining({
-        'gpt-oss-20b': { name: 'GPT OSS 20B' },
-        'qwen3-30b-a3b-2507': { name: 'Qwen3 30B A3B 2507' },
-        'qwen_qwen3-coder-next': expect.objectContaining({
-          id: 'qwen/qwen3-coder-next',
-          name: 'Qwen3 Coder Next'
-        })
-      }))
-      expect(config.provider.lmstudio.whitelist).toEqual([
-        'qwen_qwen3-coder-next',
-        'qwen/qwen3-coder-next'
-      ])
-      expect(config.provider.lmstudio.whitelist).not.toContain('gpt-oss-20b')
-      expect(config.provider.lmstudio.whitelist).not.toContain('qwen3-30b-a3b-2507')
-    })
-
-    it('should skip embedding models and mark discovered LLM modalities', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'text-embedding-nomic-embed-text-v1.5', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'qwen/qwen3-coder-30b', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'gemma-4-12b-it', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-      const config: any = {
-        provider: {
-          lmstudio: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'LM Studio (local)',
-            options: { baseURL: 'http://127.0.0.1:1234/v1' },
-            models: {}
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      expect(config.provider.lmstudio.models).not.toHaveProperty('text-embedding-nomic-embed-text-v1_5')
-      expect(config.provider.lmstudio.whitelist).not.toContain('text-embedding-nomic-embed-text-v1_5')
-      expect(config.provider.lmstudio.whitelist).not.toContain('text-embedding-nomic-embed-text-v1.5')
-      expect(config.provider.lmstudio.whitelist).toEqual(expect.arrayContaining([
-        'qwen_qwen3-coder-30b',
-        'qwen/qwen3-coder-30b',
-        'gemma-4-12b-it'
-      ]))
-      expect(config.provider.lmstudio.models['qwen_qwen3-coder-30b']).toEqual(expect.objectContaining({
-        id: 'qwen/qwen3-coder-30b',
-        modalities: {
-          input: ['text'],
-          output: ['text']
-        }
-      }))
-      expect(config.provider.lmstudio.models['gemma-4-12b-it']).toEqual(expect.objectContaining({
-        id: 'gemma-4-12b-it',
-        modalities: {
-          input: ['text', 'image'],
-          output: ['text']
-        }
-      }))
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-lmstudio] Skipped embedding models', { count: 1 })
-
-      consoleSpy.mockRestore()
-    })
-
-    it('should preserve an explicit LM Studio model whitelist', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'qwen/qwen3-coder-30b', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      const config: any = {
-        provider: {
-          lmstudio: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'LM Studio (local)',
-            options: { baseURL: 'http://127.0.0.1:1234/v1' },
-            whitelist: ['existing-model'],
-            models: {
-              'existing-model': { name: 'Existing Model' }
-            }
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      expect(config.provider.lmstudio.whitelist).toEqual(['existing-model'])
-      expect(config.provider.lmstudio.models['qwen_qwen3-coder-30b']).toEqual(expect.objectContaining({
-        id: 'qwen/qwen3-coder-30b'
-      }))
-    })
-
-    it('should handle LM Studio offline gracefully', async () => {
-      mockFetch.mockRejectedValue(new Error('Connection refused'))
-
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const config: any = {
-        provider: {
-          lmstudio: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'LM Studio (local)',
-            options: { baseURL: 'http://127.0.0.1:1234/v1' }
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-lmstudio] LM Studio appears to be offline', expect.objectContaining({ baseURL: 'http://127.0.0.1:1234' }))
-      
-      consoleSpy.mockRestore()
-    })
-  })
-
-  describe('Event Hook', () => {
-    it('should validate event input', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      
-      await pluginHooks.event({ event: null })
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-lmstudio] Invalid event input:', expect.arrayContaining(['event: event is required and must be an object']))
-      
-      consoleSpy.mockRestore()
-    })
-
-    it('should handle session events gracefully', async () => {
-      await pluginHooks.event({ event: { type: 'session.created' } })
-      // Should not throw error
-      expect(true).toBe(true)
-    })
-  })
-
-  describe('Chat Params Hook', () => {
-    it('should validate chat params input', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const output: any = {}
-      
-      await pluginHooks['chat.params'](null, output)
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-lmstudio] Invalid chat.params input')
-      
-      consoleSpy.mockRestore()
-    })
-
-    it('should skip non-LM Studio providers', async () => {
-      const input = {
-        model: { id: 'test-model' },
-        provider: { info: { id: 'anthropic' } }
-      }
-      const output: any = {}
-      
-      await pluginHooks['chat.params'](input, output)
-      expect(output).toEqual({})
-      expect(mockClient.tui.showToast).not.toHaveBeenCalled()
-    })
-
-    it('should validate LM Studio model availability', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'test-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      const input = {
-        sessionID: 'test-session',
-        model: { id: 'test-model' },
-        provider: { 
-          info: { id: 'lmstudio' },
-          options: { baseURL: 'http://127.0.0.1:1234/v1' }
-        }
-      }
-      const output: any = {}
-
-      await pluginHooks['chat.params'](input, output)
-
-      expect(mockClient.tui.showToast).toHaveBeenCalledWith(expect.objectContaining({
-        body: expect.objectContaining({
-          variant: 'success',
-          message: 'Model \'test-model\' is ready to use'
-        })
-      }))
-      expect(output.options?.lmstudioValidation).toEqual(expect.objectContaining({
-        status: 'success',
-        model: 'test-model'
-      }))
-    })
-
-    it('should send configured apiKey when validating LM Studio model availability', async () => {
-      process.env.CUSTOM_LM_STUDIO_KEY = 'runtime-token'
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'auth-runtime-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
-
-      const input = {
-        sessionID: 'test-session',
-        model: { id: 'auth-runtime-model' },
-        provider: {
-          info: { id: 'lmstudio' },
-          options: {
-            baseURL: 'http://127.0.0.1:4321/v1',
-            apiKey: '{env:CUSTOM_LM_STUDIO_KEY}'
-          }
-        }
-      }
-      const output: any = {}
-
-      await pluginHooks['chat.params'](input, output)
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://127.0.0.1:4321/v1/models',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer runtime-token'
-          })
-        })
-      )
-      expect(output.options?.lmstudioValidation).toEqual(expect.objectContaining({
-        status: 'success',
-        model: 'auth-runtime-model'
-      }))
-    })
-
-    it('should handle model not loaded', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [] // No models loaded initially
-        })
-      })
-
-      const input = {
-        sessionID: 'test-session',
-        model: { id: 'missing-model' },
-        provider: { 
-          info: { id: 'lmstudio' },
-          options: { baseURL: 'http://127.0.0.1:1234/v1' }
-        }
-      }
-      const output: any = {}
-
-      await pluginHooks['chat.params'](input, output)
-
-      expect(mockClient.tui.showToast).toHaveBeenCalledWith(expect.objectContaining({
-        body: expect.objectContaining({
-          variant: 'error',
-          message: expect.stringContaining('not ready')
-        })
-      }))
-      expect(output.options?.lmstudioValidation).toEqual(expect.objectContaining({
-        status: 'error',
-        model: 'missing-model'
-      }))
-    })
-
-    it('should handle network errors gracefully', async () => {
-      // Mock network error for fresh calls
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
-
-      const input = {
-        sessionID: 'test-session',
-        model: { id: 'test-model-failing' }, // Use different model to bypass cache
-        provider: { 
-          info: { id: 'lmstudio' },
-          options: { baseURL: 'http://127.0.0.1:1234/v1' }
-        }
-      }
-      const output: any = {}
-
-      await pluginHooks['chat.params'](input, output)
-
-      expect(output.options?.lmstudioValidation).toEqual(expect.objectContaining({
-        status: 'error',
-        errorCategory: expect.any(String)
-      }))
-    })
-  })
-
-  describe('Error Handling', () => {
-    it('should handle toast notification errors gracefully', async () => {
-      mockClient.tui.showToast.mockRejectedValue(new Error('Toast failed'))
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({ data: [] })
-      })
-
-      const input = {
-        model: { id: 'test-model' },
-        provider: { info: { id: 'lmstudio' } }
-      }
-      const output: any = {}
-
-      await pluginHooks['chat.params'](input, output)
-
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-lmstudio] Failed to show progress toast', expect.any(Error))
-      
-      consoleSpy.mockRestore()
-    })
-
-    it('should handle config enhancement errors', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      // Mock fetch to throw error during auto-detection
-      mockFetch.mockRejectedValue(new Error('Auto-detection failed'))
-
-      const config: any = {}
-      await pluginHooks.config(config)
-
-      // Should handle error gracefully without throwing
-      expect(true).toBe(true)
-      
-      consoleSpy.mockRestore()
-    })
+    const hooks = await LMStudioPlugin(input)
+    const value = config()
+    await expect(hooks.config?.(value)).resolves.toBeUndefined()
+    expect(value.provider?.lmstudio).toBeDefined()
   })
 })

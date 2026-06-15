@@ -1,55 +1,39 @@
 import type { Plugin, PluginInput } from "@opencode-ai/plugin"
 import { createRequire } from "node:module"
-import { ToastNotifier } from '../ui/toast-notifier.ts'
-import { createConfigHook } from './config-hook.ts'
-import { createEventHook } from './event-hook.ts'
-import { createChatParamsHook } from './chat-params-hook.ts'
+import type { LogLevel, PluginLogger } from "../types/index.ts"
+import { createConfigHook } from "./config-hook.ts"
 
+const SERVICE = "opencode-lmstudio"
 const nodeRequire = createRequire(import.meta.url)
 
-function getPackageVersion(): string {
+function packageVersion(): string {
   try {
-    const packageJSON = nodeRequire("../../package.json") as { version?: unknown }
-    return typeof packageJSON.version === "string" ? packageJSON.version : "unknown"
+    const value = nodeRequire("../../package.json") as { version?: unknown }
+    return typeof value.version === "string" ? value.version : "unknown"
   } catch {
     return "unknown"
   }
 }
 
-/**
- * LM Studio Plugin - Enhanced Modular Version
- * 
- * Features:
- * - Auto-detection of running LM Studio instance
- * - Dynamic model discovery from LM Studio API
- * - Real-time model validation with smart error handling
- * - Comprehensive caching system with 80%+ API call reduction
- * - Model loading state monitoring with progress tracking
- * - Toast notifications for better UX
- * - Intelligent model suggestions and error recovery
- */
-export const LMStudioPlugin: Plugin = async (input: PluginInput) => {
-  console.log("[opencode-lmstudio] LM Studio plugin initialized", {
-    version: getPackageVersion(),
-  })
-  
-  const { client } = input
-  
-  // Validate client
-  if (!client || typeof client !== 'object') {
-    console.error("[opencode-lmstudio] Invalid client provided to plugin")
-    return {
-      config: async () => {},
-      event: async () => {},
-      "chat.params": async () => {}
+function createLogger(client: PluginInput["client"]): PluginLogger {
+  return async (level: LogLevel, message: string, extra?: Record<string, unknown>) => {
+    try {
+      await client.app.log({
+        body: {
+          service: SERVICE,
+          level,
+          message,
+          extra,
+        },
+      })
+    } catch {
+      // Logging must never block provider configuration.
     }
   }
-  
-  const toastNotifier = new ToastNotifier(client)
+}
 
-  return {
-    config: createConfigHook(client, toastNotifier),
-    event: createEventHook(),
-    "chat.params": createChatParamsHook(toastNotifier),
-  }
+export const LMStudioPlugin: Plugin = async ({ client }) => {
+  const log = createLogger(client)
+  await log("info", "LM Studio plugin initialized", { version: packageVersion() })
+  return { config: createConfigHook(log) }
 }
