@@ -1,19 +1,18 @@
 # Release runbook
 
-A release is a separate, explicitly approved operation. Repository refactoring,
-PR review, and validation do not authorize tagging or publishing.
+Release actions begin after the candidate gate passes and the exact mutation is
+explicitly approved.
 
 ## Release channels
 
 | Package version | npm dist-tag | GitHub release | Stable `latest` |
 | --- | --- | --- | --- |
 | `x.y.z` | `latest` | Full release, marked latest | Moves to `x.y.z` |
-| `x.y.z-<prerelease>` | `next` | Prerelease | Must not move |
+| `x.y.z-<prerelease>` | `next` | Prerelease | Remains on current stable |
 
 `scripts/release-version.ts` is the executable channel contract. It accepts an
 exact SemVer version without build metadata, emits the Git tag and release
-channel, and is covered by unit tests. Do not derive channels independently in
-ad hoc release commands.
+channel, and is covered by unit tests. Release commands use its output directly.
 
 The first typed-discovery candidate is `1.0.0-rc.1`. Its canonical opt-in,
 rollback, test matrix, and feedback tracker is
@@ -28,7 +27,8 @@ Before proposing a release:
 3. Confirm `package.json`, `package-lock.json`, and
    `docs/releases/v<version>.md` name the exact candidate.
 4. Run `npm run release:check`.
-5. Confirm the real OpenCode CLI smoke and Microsoft TUI Test suite pass.
+5. Confirm the real OpenCode CLI smoke and every plugin-facing Microsoft TUI
+   Test view pass from both the source build and packed candidate.
 6. Confirm `npm audit` reports no vulnerabilities.
 7. Confirm `npm pack --dry-run` contains only current build artifacts.
 8. Test the packed tarball in a clean temporary project.
@@ -66,10 +66,9 @@ npx --yes npm@11.16.0 trust github opencode-lmstudio \
   --allow-publish
 ```
 
-Configuring trust requires npm package-owner authentication and 2FA. Do not add
-an `NPM_TOKEN` fallback to CI; fix the trusted-publisher relationship instead.
-Use an npm CLI that supports explicit trusted-publisher permissions; older
-clients omit `--allow-publish` and the current registry rejects that payload.
+Configuring trust requires npm package-owner authentication and 2FA. CI
+authentication is OIDC-only. Use npm `11.16.0` or newer so the trust command
+includes the registry's required explicit publish permission.
 
 ## Release workflow
 
@@ -97,12 +96,16 @@ gh workflow run release.yml \
 For every candidate the workflow:
 
 1. validates exact SemVer, manifest version, release notes, branch, and clean tree;
-2. runs core, OpenCode smoke, TUI screenshot, audit, and package gates;
-3. stages a draft GitHub release, marking prereleases before publication;
-4. publishes with npm provenance to derived tag `next` or `latest`;
-5. verifies that the derived npm tag resolves to the exact version and that a
-   prerelease did not replace stable `latest`;
-6. finalizes the GitHub prerelease or full latest release.
+2. runs core, OpenCode smoke, all TUI views, audit, and package gates;
+3. installs the packed candidate and repeats the real OpenCode smoke and TUI
+   matrix before publication;
+4. stages a draft GitHub release, marking prereleases before publication;
+5. publishes with npm provenance to derived tag `next` or `latest`;
+6. verifies that the derived npm tag resolves to the exact version and stable
+   `latest` remains unchanged for a prerelease;
+7. anonymously installs the exact public npm version and repeats the real
+   OpenCode smoke and every TUI view; and
+8. finalizes the GitHub prerelease or full latest release.
 
 If npm publication fails, the workflow removes the staged draft release and
 tag. If npm succeeds but later verification fails, preserve the draft and
@@ -118,10 +121,10 @@ git status --short --branch
 ```
 
 For a prerelease, also prove that `opencode-lmstudio@next` resolves to the
-candidate and `opencode-lmstudio@latest` still resolves to the prior stable
+candidate and `opencode-lmstudio@latest` still resolves to the current stable
 version. Download the registry tarball, inspect it, and install/import it in a
 clean temporary project before calling the release complete.
 
 Update the canonical feedback tracker with immutable npm and GitHub links after
-publication. A final `1.0.0` must be published as a separate version after RC
-feedback is triaged; never relabel prerelease bytes as the final package.
+publication. Publish final `1.0.0` as a separate immutable version after RC
+feedback is triaged.

@@ -19,41 +19,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- Model discovery no longer guesses types or capabilities from model IDs.
+- Model discovery uses LM Studio's reported model type and metadata.
 - User model overrides and explicit whitelists take precedence over discovery.
 - Context-aware models use LM Studio's reported context length and a bounded
   output reserve so OpenCode compaction retains a usable prompt budget.
 - Auto-detection accepts a port only after its LM Studio metadata response validates.
-- The build cleans `dist/` before compilation so deleted modules cannot ship.
+- Package builds contain a fresh `dist/` tree generated from current source.
 - OpenCode configuration validation delegates to OpenCode's own parser.
 
 ### Fixed
 
-- Embedding models are no longer emitted with an invalid `embedding` output modality.
-- Explicit and private-network API-key authentication is retained during discovery.
+- Embedding models remain outside OpenCode's chat-model configuration.
+- Explicit and private-network API-key authentication applies during discovery.
 - Vision models receive the OpenCode attachment capability only when LM Studio reports `vlm`.
-- LM Studio JIT loading is no longer blocked by a pre-request loaded-model guard.
-
-### Removed
-
-- Model-family substring registries and name-based capability inference.
-- Redundant caches, polling, loading monitors, startup toasts, and manual config validators.
-- The unsafe release script that changed versions, committed, pushed, and published in one step.
+- Downloaded models remain eligible for LM Studio JIT loading.
 
 ### Release-candidate scope
 
-The proposed 1.0.0 release is a compatibility and correctness reset. This first
-release candidate adopts LM Studio's rich REST metadata as the source of truth
-and OpenCode's typed config-hook contract as the output boundary. It is
+The proposed 1.0.0 release defines a typed integration contract between LM
+Studio's REST metadata and OpenCode's config hook. This first candidate is
 published under npm `next`; stable npm `latest` remains on `0.3.1` while
-community feedback is collected in [#34](https://github.com/agustif/opencode-lmstudio/issues/34).
+community feedback is collected in
+[#34](https://github.com/agustif/opencode-lmstudio/issues/34).
 
 ### Migration notes
 
 - LM Studio 0.3.6 or newer is required for `/api/v0/models` discovery.
-- `/v1/models` is not used as a fallback because it cannot safely distinguish chat, vision, and embedding models.
-- Model IDs are preserved exactly instead of being reformatted or sanitized.
-- Embedding models are intentionally omitted from OpenCode's chat provider.
+- Model discovery uses `GET /api/v0/models`.
+- Model IDs are preserved exactly.
+- OpenCode's chat provider includes `llm` and `vlm` model types.
 - Users needing a custom display name, output limit, or whitelist should configure an explicit model override.
 - Final `1.0.0` will not occur until RC feedback is triaged and CI,
   current-OpenCode smoke tests, pinned screenshot tests, package inspection,
@@ -61,8 +55,19 @@ community feedback is collected in [#34](https://github.com/agustif/opencode-lms
 
 ### Acknowledgements
 
-- Merged contribution: [@trigger2k20](https://github.com/trigger2k20) added API-key authentication in [#29](https://github.com/agustif/opencode-lmstudio/pull/29).
-- The 1.0 design and implementation were informed by reports and proposals from [@aluzed](https://github.com/aluzed) [#30](https://github.com/agustif/opencode-lmstudio/pull/30), [@rashomon-gh](https://github.com/rashomon-gh) [#27](https://github.com/agustif/opencode-lmstudio/pull/27), [@scott1028](https://github.com/scott1028) [#26](https://github.com/agustif/opencode-lmstudio/pull/26), [@z3r0-815](https://github.com/z3r0-815) [#25](https://github.com/agustif/opencode-lmstudio/pull/25), [@bluelovers](https://github.com/bluelovers) [#23](https://github.com/agustif/opencode-lmstudio/pull/23), [@SerenityG4K](https://github.com/SerenityG4K) [#22](https://github.com/agustif/opencode-lmstudio/pull/22), [@Lzmatgh](https://github.com/Lzmatgh) [#18](https://github.com/agustif/opencode-lmstudio/pull/18) and [#19](https://github.com/agustif/opencode-lmstudio/pull/19), [@HarelMil](https://github.com/HarelMil) [#13](https://github.com/agustif/opencode-lmstudio/pull/13), and [@jleaders](https://github.com/jleaders) [#10](https://github.com/agustif/opencode-lmstudio/pull/10).
+- Community co-authors: [@trigger2k20](https://github.com/trigger2k20),
+  [@aluzed](https://github.com/aluzed),
+  [@rashomon-gh](https://github.com/rashomon-gh),
+  [@scott1028](https://github.com/scott1028),
+  [@SerenityG4K](https://github.com/SerenityG4K),
+  [@Lzmatgh](https://github.com/Lzmatgh),
+  [@HarelMil](https://github.com/HarelMil), and
+  [@jleaders](https://github.com/jleaders).
+- Additional testing and design input:
+  [@z3r0-815](https://github.com/z3r0-815) and
+  [@bluelovers](https://github.com/bluelovers).
+- Contribution details and pull-request links are recorded in
+  [`CONTRIBUTORS.md`](./CONTRIBUTORS.md).
 
 [Unreleased]: https://github.com/agustif/opencode-lmstudio/compare/v1.0.0-rc.1...HEAD
 [1.0.0-rc.1]: https://github.com/agustif/opencode-lmstudio/compare/v0.3.1...v1.0.0-rc.1

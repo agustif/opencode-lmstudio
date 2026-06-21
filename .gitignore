@@ -9,4 +9,4 @@ opencode-debug.log
 coverage/
 .tui-test/
 tui-traces/
-
+tui-artifacts/

@@ -77,7 +77,7 @@ function mergeProvider(
   }
 }
 
-/** Enrich the single documented `lmstudio` provider without guessing model capabilities. */
+/** Enrich the documented `lmstudio` provider from reported model metadata. */
 export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): Promise<EnhanceConfigResult | undefined> {
   const existing = config.provider?.lmstudio
   const configuredBaseURL = getString(existing?.options?.baseURL)

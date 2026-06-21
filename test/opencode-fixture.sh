@@ -30,9 +30,14 @@ for _ in {1..200}; do
 done
 [[ -s "$fixture_root/server-url" ]] || { echo "LM Studio fixture did not become ready" >&2; exit 1; }
 server_url=$(<"$fixture_root/server-url")
+plugin_entry=${OPENCODE_LMSTUDIO_PLUGIN_ENTRY:-"$repo_root/dist/index.js"}
+provider_name=${OPENCODE_LMSTUDIO_PROVIDER_NAME:-"LM Studio TUI Test"}
+[[ -f "$plugin_entry" ]] || { echo "Plugin entrypoint is missing: $plugin_entry" >&2; exit 1; }
+plugin_entry_json=$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$plugin_entry")
+provider_name_json=$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$provider_name")
 
 cat >"$fixture_root/.opencode/plugins/lmstudio.ts" <<PLUGIN
-export { LMStudioPlugin } from "$repo_root/dist/index.js"
+export { LMStudioPlugin } from $plugin_entry_json
 PLUGIN
 cat >"$fixture_root/opencode.json" <<CONFIG
 {
@@ -42,7 +47,7 @@ cat >"$fixture_root/opencode.json" <<CONFIG
   "provider": {
     "lmstudio": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "LM Studio TUI Test",
+      "name": $provider_name_json,
       "options": {
         "baseURL": "$server_url/v1",
         "apiKey": "tui-token"

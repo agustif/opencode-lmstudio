@@ -30,7 +30,7 @@ jobs:
   release:
     name: Validate and optionally publish
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     environment: release
     steps:
       - uses: actions/checkout@v7
@@ -100,7 +100,29 @@ jobs:
         run: npm run test:tui:check
 
       - name: Preview package
-        run: npm pack --json > package-preview.json
+        id: package
+        shell: bash
+        run: |
+          npm pack --json > package-preview.json
+          echo "tarball=$(node -e 'const fs=require(\"node:fs\"); const value=JSON.parse(fs.readFileSync(\"package-preview.json\", \"utf8\")); process.stdout.write(value[0].filename)')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup latest OpenCode for packed-candidate smoke
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.latest.outputs.version }}
+          cache: false
+
+      - name: Test the packed candidate with real OpenCode
+        run: npm run smoke:opencode:package -- "${{ steps.package.outputs.tarball }}" --expected-version "$VERSION"
+
+      - name: Setup pinned OpenCode for packed-candidate TUI
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.tui.outputs.version }}
+          cache: false
+
+      - name: Test every plugin-facing TUI view from the packed candidate
+        run: npm run test:tui:package -- "${{ steps.package.outputs.tarball }}" --expected-version "$VERSION"
 
       - name: Upload release evidence
         uses: actions/upload-artifact@v7
@@ -110,6 +132,7 @@ jobs:
             coverage/
             docs/screenshots/
             package-preview.json
+            tui-artifacts/
             tui-traces/
           if-no-files-found: ignore
           retention-days: 30
@@ -185,6 +208,39 @@ jobs:
               exit 1
             }
           fi
+
+      - name: Setup latest OpenCode for published-package smoke
+        if: inputs.publish
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.latest.outputs.version }}
+          cache: false
+
+      - name: Test the public npm package with real OpenCode
+        if: inputs.publish
+        run: npm run smoke:opencode:package -- "opencode-lmstudio@$VERSION"
+
+      - name: Setup pinned OpenCode for published-package TUI
+        if: inputs.publish
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.tui.outputs.version }}
+          cache: false
+
+      - name: Test the public npm package in the real OpenCode TUI
+        if: inputs.publish
+        run: npm run test:tui:package -- "opencode-lmstudio@$VERSION"
+
+      - name: Upload public npm package evidence
+        if: inputs.publish && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: public-package-evidence-${{ inputs.version }}
+          path: |
+            tui-artifacts/npm-${{ inputs.version }}/
+            tui-traces/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Finalize GitHub release
         if: inputs.publish

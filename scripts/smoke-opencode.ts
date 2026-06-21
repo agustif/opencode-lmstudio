@@ -7,6 +7,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { createLMStudioFixture } from "../test/fixtures/lmstudio-server.ts"
+import { expectedVersionForPackageSpec, installTestPackage } from "./install-test-package.ts"
 
 function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolveRun, reject) => {
@@ -24,6 +25,20 @@ const root = mkdtempSync(join(tmpdir(), "opencode-lmstudio-smoke-"))
 const fixture = await createLMStudioFixture("smoke", "smoke-token", "SMOKE_OK")
 try {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+  const packageFlag = process.argv.indexOf("--package")
+  const packageSpec = packageFlag === -1 ? undefined : process.argv[packageFlag + 1]
+  if (packageFlag !== -1 && !packageSpec) throw new Error("--package requires a value")
+  const expectedFlag = process.argv.indexOf("--expected-version")
+  const explicitVersion = expectedFlag === -1 ? undefined : process.argv[expectedFlag + 1]
+  if (expectedFlag !== -1 && !explicitVersion) throw new Error("--expected-version requires a value")
+  const installed = packageSpec
+    ? installTestPackage(
+      packageSpec,
+      expectedVersionForPackageSpec(packageSpec, explicitVersion),
+      join(root, "package"),
+    )
+    : undefined
+  const pluginEntry = installed?.entrypoint ?? join(repoRoot, "dist", "index.js")
   const pluginDirectory = join(root, ".opencode", "plugins")
   mkdirSync(pluginDirectory, { recursive: true })
   mkdirSync(join(root, "home"), { recursive: true })
@@ -33,7 +48,7 @@ try {
   mkdirSync(join(root, "xdg", "state"), { recursive: true })
 
   writeFileSync(join(pluginDirectory, "lmstudio.ts"),
-    `export { LMStudioPlugin } from ${JSON.stringify(join(repoRoot, "dist", "index.js"))}\n`)
+    `export { LMStudioPlugin } from ${JSON.stringify(pluginEntry)}\n`)
   const configPath = join(root, "opencode.json")
   writeFileSync(configPath, JSON.stringify({
     $schema: "https://opencode.ai/config.json",
@@ -79,7 +94,8 @@ try {
   assert(fixture.requests.some((request) => request.method === "POST" && request.url === "/v1/chat/completions"))
   assert(fixture.requests.every((request) => request.authorization === "Bearer smoke-token"))
 
-  console.log("OpenCode live smoke passed: plugin load, realistic typed discovery, filtering, auth, and chat request flow")
+  const source = installed ? `${installed.source} package ${installed.version}` : "local build"
+  console.log(`OpenCode live smoke passed with ${source}: plugin load, typed discovery, filtering, auth, and chat request flow`)
 } finally {
   await fixture.close()
   rmSync(root, { recursive: true, force: true })

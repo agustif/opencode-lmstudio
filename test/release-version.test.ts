@@ -34,7 +34,7 @@ describe("release version metadata", () => {
     "1.0.0-rc.01",
     "1.0.0+build.1",
     "1.0.0\noutput=injected",
-  ])("rejects invalid or release-unsafe version %j", (version) => {
+  ])("rejects invalid release version %j", (version) => {
     expect(() => getReleaseVersionMetadata(version)).toThrow("Expected an exact SemVer release")
   })
 })

@@ -5,7 +5,7 @@ export default defineConfig({
   workers: 1,
   retries: 2,
   timeout: 60_000,
-  globalTimeout: 120_000,
+  globalTimeout: 360_000,
   shellReadyTimeout: 30_000,
   expect: {
     timeout: 20_000,

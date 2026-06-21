@@ -34,10 +34,7 @@ function resolveEnvSyntax(value: string | undefined): string | undefined {
   return match ? process.env[match[1]] : value
 }
 
-/**
- * Whether an environment fallback token can be sent without risking exposure
- * to a public host. Explicit provider tokens are always honored.
- */
+/** Return whether automatic environment-token lookup is allowed for this host. */
 export function isLocalOrPrivateURL(input: string): boolean {
   let hostname: string
   try {
@@ -101,13 +98,7 @@ export function toModelsURL(serverURL: string): string {
   return `${normalizeLMStudioURL(serverURL)}${LM_STUDIO_MODELS_PATH}`
 }
 
-/**
- * Discover models through LM Studio's metadata-rich REST endpoint.
- *
- * There is intentionally no `/v1/models` fallback: that endpoint omits the
- * model domain, and guessing from model names can register embedding models as
- * chat models or claim unsupported capabilities.
- */
+/** Discover and validate typed model metadata from LM Studio's REST API. */
 export async function discoverModels(
   serverURL: string,
   options: DiscoverModelsOptions = {},
@@ -155,7 +146,7 @@ export interface AutoDetectedLMStudio {
   readonly response: LMStudioModelsResponse
 }
 
-/** Probe the historical auto-detection ports, accepting only LM Studio's rich typed response. */
+/** Connect to the first common local endpoint that returns valid LM Studio metadata. */
 export async function autoDetectLMStudio(): Promise<AutoDetectedLMStudio | undefined> {
   for (const serverURL of AUTO_DETECT_URLS) {
     const apiKey = getLMStudioApiKey(undefined, serverURL)
@@ -163,7 +154,7 @@ export async function autoDetectLMStudio(): Promise<AutoDetectedLMStudio | undef
       const response = await discoverModels(serverURL, { apiKey, timeoutMs: 1_000 })
       return { serverURL, apiKey, response }
     } catch {
-      // A port is considered LM Studio only if the official endpoint validates.
+      // Continue until an endpoint returns valid LM Studio metadata.
     }
   }
   return undefined

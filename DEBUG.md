@@ -2,7 +2,7 @@
 
 ## Inspect OpenCode's resolved configuration
 
-Use OpenCode's own current parser rather than a local approximation:
+Use OpenCode's parser to inspect the exact configuration loaded by the CLI:
 
 ```sh
 npm run validate:config -- /path/to/opencode.json
@@ -10,9 +10,12 @@ npm run validate:config -- /path/to/opencode.json
 OPENCODE_CONFIG=/path/to/opencode.json opencode debug config
 ```
 
-## Confirm LM Studio metadata
+Confirm that `provider.lmstudio.options.baseURL`, discovered models, limits,
+modalities, and whitelist match the intended LM Studio server.
 
-For a local server without authentication:
+## Inspect LM Studio metadata
+
+For a local server:
 
 ```sh
 curl --fail --silent http://127.0.0.1:1234/api/v0/models | jq .
@@ -26,33 +29,42 @@ curl --fail --silent \
   http://127.0.0.1:1234/api/v0/models | jq .
 ```
 
-A discoverable generative model must have a non-empty `id`, a `type` of `llm`
-or `vlm`, and may include a positive `max_context_length`. Embedding and unknown
-model domains are intentionally not added to OpenCode's chat provider.
+Chat discovery uses models with a non-empty `id` and a `type` of `llm` or
+`vlm`. A positive `max_context_length` becomes the OpenCode context limit.
 
-## Structured logs
+## Inspect OpenCode logs
 
-The plugin writes through OpenCode's `client.app.log` service. It does not print
-directly to `console` or send startup toasts. Look for the service name
-`opencode-lmstudio` in OpenCode logs.
+Filter OpenCode logs for the service name `opencode-lmstudio`:
 
-- `info`: discovery succeeded
-- `warn`: an explicitly configured LM Studio server could not be discovered
-- `debug`: no auto-detected local LM Studio server was available
+- `info`: discovery completed and reports model counts;
+- `warn`: an explicitly configured LM Studio server could not be reached or
+  returned an unsupported response; and
+- `debug`: local auto-detection found no available LM Studio server.
 
-## Repository checks
+Sanitize configuration and logs before sharing them. Remove API keys, Bearer
+tokens, private model paths, and unrelated environment values.
+
+## Run repository checks
 
 ```sh
 npm run validate
 npm run test:coverage
 npm run smoke:opencode
-npm run test:tui
+npm run test:tui:check
 npm audit
 npm pack --dry-run
 ```
 
-The TUI suite uses `@microsoft/tui-test`, not sleeps or pane scraping. Failed
-runs retain replayable traces under `tui-traces/`.
+Failed TUI runs retain replayable traces under `tui-traces/`. Package previews
+should contain `LICENSE`, `README.md`, `package.json`, and the current `dist/`
+build only.
 
-The build cleans `dist/` before compiling. If a package preview contains deleted
-modules, treat it as a build failure and do not release.
+To exercise an immutable npm version through the real OpenCode smoke and TUI
+matrix:
+
+```sh
+npm run smoke:opencode:package -- opencode-lmstudio@1.0.0-rc.1
+npm run test:tui:package -- opencode-lmstudio@1.0.0-rc.1
+```
+
+Package-mode screenshots are written under `tui-artifacts/npm-<version>/`.

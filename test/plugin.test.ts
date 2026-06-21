@@ -52,7 +52,7 @@ afterEach(() => {
 })
 
 describe("LM Studio API", () => {
-  it("normalizes provider URLs without guessing ports or hosts", () => {
+  it("normalizes configured provider URLs", () => {
     expect(normalizeLMStudioURL("http://127.0.0.1:1234/v1/")).toBe("http://127.0.0.1:1234")
     expect(toOpenAICompatibleURL("https://models.example.test/v1")).toBe("https://models.example.test/v1")
     expect(toModelsURL("https://models.example.test/v1")).toBe("https://models.example.test/api/v0/models")
@@ -86,7 +86,7 @@ describe("LM Studio API", () => {
     })).rejects.toThrow("unsupported response")
   })
 
-  it("auto-detects historical ports only after validating the official response", async () => {
+  it("connects to the first common local port with valid metadata", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response("not LM Studio", { status: 200 }))
       .mockResolvedValueOnce(modelsResponse([model()]))
@@ -98,7 +98,7 @@ describe("LM Studio API", () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
-  it("preserves private-network API-key fallback without leaking it to public hosts", () => {
+  it("limits automatic environment-token lookup to local and private hosts", () => {
     process.env.LMSTUDIO_API_KEY = "private-token"
     process.env.CUSTOM_LM_STUDIO_KEY = "explicit-token"
 
@@ -144,7 +144,7 @@ describe("config enhancement", () => {
     ])
   })
 
-  it("omits limits when LM Studio does not report an official context length", async () => {
+  it("keeps model limits unset when LM Studio omits the context length", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model({ max_context_length: undefined })])))
     const value = config()
 
@@ -215,7 +215,7 @@ describe("plugin entrypoint", () => {
     })
   })
 
-  it("does not let logging failures block configuration", async () => {
+  it("keeps configuration available when logging fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model()])))
     const input = {
       client: { app: { log: vi.fn(async () => { throw new Error("logging unavailable") }) } },

@@ -1,13 +1,7 @@
 import { z } from "zod"
 import type { Hooks } from "@opencode-ai/plugin"
 
-/**
- * LM Studio's documented `GET /api/v0/models` response.
- *
- * The endpoint is the only discovery source used by this plugin because it
- * reports the model domain explicitly. The OpenAI-compatible `/v1/models`
- * endpoint does not distinguish chat, vision, and embedding models.
- */
+/** LM Studio's documented typed `GET /api/v0/models` response. */
 export const LMStudioModelSchema = z.looseObject({
   id: z.string().min(1),
   object: z.literal("model").optional(),

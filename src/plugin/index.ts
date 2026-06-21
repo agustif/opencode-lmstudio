@@ -27,7 +27,7 @@ function createLogger(client: PluginInput["client"]): PluginLogger {
         },
       })
     } catch {
-      // Logging must never block provider configuration.
+      // Logging is best-effort so configuration can continue.
     }
   }
 }

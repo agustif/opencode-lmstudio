@@ -1,12 +1,6 @@
 #!/usr/bin/env bun
 
-/**
- * Release preflight only.
- *
- * This command intentionally never changes versions, commits, tags, pushes,
- * creates GitHub releases, or publishes packages. Those actions require an
- * explicit reviewed release plan.
- */
+/** Read-only release preflight. Mutations run through the reviewed workflow. */
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { getReleaseVersionMetadata } from "./release-version.ts"
@@ -32,4 +26,4 @@ run("npm", ["pack", "--dry-run"])
 
 console.log("\nCore release preflight passed.")
 console.log("The current-OpenCode smoke and pinned TUI/screenshot checks remain separate versioned gates in CI.")
-console.log("No release action was performed. Review RELEASE.md before any version, tag, push, GitHub release, or npm publish action.")
+console.log("Release mutations run through the reviewed workflow documented in RELEASE.md.")
