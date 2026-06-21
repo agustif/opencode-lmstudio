@@ -68,6 +68,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Chromium for xterm.js screenshots
+        run: npx playwright install --with-deps chromium
+
       - name: Core release preflight
         run: npm run release:check
 
@@ -130,6 +133,7 @@ jobs:
         with:
           name: release-evidence-${{ inputs.version }}
           path: |
+            .tui-test/screenshots/
             coverage/
             docs/screenshots/
             package-preview.json

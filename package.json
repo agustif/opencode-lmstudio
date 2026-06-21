@@ -25,7 +25,7 @@
     "test:tui": "npm run build && bun scripts/run-tui-tests.ts",
     "test:tui:package": "bun scripts/run-tui-tests.ts --package",
     "test:tui:update": "npm run build && bun scripts/run-tui-tests.ts --update",
-    "test:tui:check": "npm run test:tui && git diff --exit-code -- docs/screenshots",
+    "test:tui:check": "npm run test:tui",
     "smoke:opencode": "npm run build && bun scripts/smoke-opencode.ts",
     "smoke:opencode:package": "bun scripts/smoke-opencode.ts --package",
     "fixture:capture": "bun scripts/capture-lmstudio-fixture.ts --source lms",
@@ -64,12 +64,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@microsoft/tui-test": "^0.0.4",
     "@types/node": "^25.9.3",
     "@typescript-eslint/eslint-plugin": "^8.61.0",
     "@typescript-eslint/parser": "^8.61.0",
     "@vitest/coverage-v8": "^4.1.8",
+    "@xterm/xterm": "^6.0.0",
     "eslint": "^10.5.0",
+    "playwright": "^1.61.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.8"
   }

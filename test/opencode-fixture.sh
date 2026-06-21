@@ -2,8 +2,10 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/opencode-lmstudio-tui.XXXXXX")
+fixture_root=/tmp/opencode-lmstudio-tui
 server_pid=""
+
+rm -rf "$fixture_root"
 
 cleanup() {
   if [[ -n "$server_pid" ]]; then

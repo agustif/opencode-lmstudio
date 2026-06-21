@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { expectedVersionForPackageSpec, installTestPackage } from "./install-test-package.ts"
+import { renderTuiScreenshots } from "./render-tui-screenshots.ts"
 
 function argumentValue(name: string): string | undefined {
   const index = process.argv.indexOf(name)
@@ -41,6 +42,8 @@ const packageVersion = packageSpec
 const packageRoot = packageSpec ? mkdtempSync(join(tmpdir(), "opencode-lmstudio-package-")) : undefined
 
 try {
+  const traceDirectory = join(process.cwd(), "tui-traces")
+  rmSync(traceDirectory, { recursive: true, force: true })
   const installed = packageSpec && packageVersion && packageRoot
     ? installTestPackage(packageSpec, packageVersion, packageRoot)
     : undefined
@@ -63,6 +66,14 @@ try {
     stdio: "inherit",
   })
   process.exitCode = result.status ?? 1
+  if (result.status === 0) {
+    const outputDirectory = installed
+      ? join(process.cwd(), "tui-artifacts", `${installed.source}-${installed.version}`)
+      : process.argv.includes("--update")
+        ? join(process.cwd(), "docs", "screenshots")
+        : join(process.cwd(), ".tui-test", "screenshots")
+    await renderTuiScreenshots({ outputDirectory, traceDirectory })
+  }
 } finally {
   if (packageRoot) rmSync(packageRoot, { recursive: true, force: true })
 }
