@@ -25,5 +25,5 @@ run("npm", ["audit", "--audit-level=high"])
 run("npm", ["pack", "--dry-run"])
 
 console.log("\nCore release preflight passed.")
-console.log("The current-OpenCode smoke and pinned TUI/screenshot checks remain separate versioned gates in CI.")
+console.log("The minimum/current OpenCode, ACP, resolver, and TUI checks remain separate versioned gates in CI.")
 console.log("Release mutations run through the reviewed workflow documented in RELEASE.md.")

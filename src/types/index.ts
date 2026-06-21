@@ -1,22 +1,43 @@
-import { z } from "zod"
 import type { Hooks } from "@opencode-ai/plugin"
+import { z } from "zod"
 
-/** LM Studio's documented typed `GET /api/v0/models` response. */
-export const LMStudioModelSchema = z.looseObject({
+/** A loaded instance reported by LM Studio's native `GET /api/v1/models`. */
+export const LMStudioLoadedInstanceSchema = z.looseObject({
   id: z.string().min(1),
-  object: z.literal("model").optional(),
+  config: z.looseObject({
+    context_length: z.number().int().positive(),
+  }),
+})
+
+/** Capabilities reported for a native v1 LLM record. */
+export const LMStudioCapabilitiesSchema = z.looseObject({
+  vision: z.boolean(),
+  trained_for_tool_use: z.boolean(),
+  reasoning: z.looseObject({
+    allowed_options: z.array(z.enum(["off", "on", "low", "medium", "high"])),
+    default: z.enum(["off", "on", "low", "medium", "high"]),
+  }).optional(),
+})
+
+/** LM Studio's documented native `GET /api/v1/models` model record. */
+export const LMStudioModelSchema = z.looseObject({
   type: z.string().min(1),
-  publisher: z.string().optional(),
-  arch: z.string().optional(),
-  compatibility_type: z.string().optional(),
-  quantization: z.string().optional(),
-  state: z.string().optional(),
-  max_context_length: z.number().int().positive().optional(),
+  key: z.string().min(1),
+  display_name: z.string().min(1),
+  publisher: z.string().min(1),
+  architecture: z.string().nullable().optional(),
+  quantization: z.looseObject({
+    name: z.string().nullable(),
+    bits_per_weight: z.number().nullable(),
+  }).nullable(),
+  loaded_instances: z.array(LMStudioLoadedInstanceSchema),
+  max_context_length: z.number().int().positive(),
+  format: z.enum(["gguf", "mlx"]).nullable(),
+  capabilities: LMStudioCapabilitiesSchema.optional(),
 })
 
 export const LMStudioModelsResponseSchema = z.looseObject({
-  object: z.literal("list").optional(),
-  data: z.array(LMStudioModelSchema),
+  models: z.array(LMStudioModelSchema),
 })
 
 export type LMStudioModel = z.infer<typeof LMStudioModelSchema>

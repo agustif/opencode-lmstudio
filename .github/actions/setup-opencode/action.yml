@@ -29,8 +29,7 @@ runs:
           exit 1
         }
 
-    # Mirrors the install/cache portion of anomalyco/opencode/github while
-    # allowing CI to pin a known compatibility version.
+    # Install the immutable official release asset for the runner platform.
     - name: Cache OpenCode
       id: cache
       if: inputs.cache == 'true'
@@ -47,8 +46,23 @@ runs:
       run: |
         set -euo pipefail
         rm -rf "$HOME/.opencode/bin"
-        curl --fail --silent --show-error --location https://opencode.ai/install \
-          | bash -s -- --version "$OPENCODE_VERSION" --no-modify-path
+        mkdir -p "$HOME/.opencode/bin"
+        case "${RUNNER_OS}/${RUNNER_ARCH}" in
+          Linux/X64) asset=opencode-linux-x64.tar.gz ;;
+          Linux/ARM64) asset=opencode-linux-arm64.tar.gz ;;
+          macOS/X64) asset=opencode-darwin-x64.zip ;;
+          macOS/ARM64) asset=opencode-darwin-arm64.zip ;;
+          Windows/X64) asset=opencode-windows-x64.zip ;;
+          Windows/ARM64) asset=opencode-windows-arm64.zip ;;
+          *) echo "Unsupported OpenCode runner: ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
+        esac
+        url="https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${asset}"
+        archive="$RUNNER_TEMP/$asset"
+        curl --fail --silent --show-error --location "$url" --output "$archive"
+        case "$asset" in
+          *.zip) unzip -q -j "$archive" -d "$HOME/.opencode/bin" ;;
+          *.tar.gz) tar -xzf "$archive" -C "$HOME/.opencode/bin" ;;
+        esac
 
     - name: Export and verify OpenCode
       id: verify
@@ -58,12 +72,21 @@ runs:
       run: |
         set -euo pipefail
         binary="$HOME/.opencode/bin/opencode"
+        if [[ "$RUNNER_OS" = Windows ]]; then
+          binary="$HOME/.opencode/bin/opencode.exe"
+        fi
         test -x "$binary"
         actual="$($binary --version)"
         test "$actual" = "$OPENCODE_VERSION" || {
           echo "Expected OpenCode $OPENCODE_VERSION, got $actual" >&2
           exit 1
         }
-        echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
-        echo "OPENCODE_BIN=$binary" >> "$GITHUB_ENV"
-        echo "binary=$binary" >> "$GITHUB_OUTPUT"
+        export_dir="$HOME/.opencode/bin"
+        export_binary="$binary"
+        if [[ "$RUNNER_OS" = Windows ]]; then
+          export_dir=$(cygpath -w "$export_dir")
+          export_binary=$(cygpath -w "$export_binary")
+        fi
+        echo "$export_dir" >> "$GITHUB_PATH"
+        echo "OPENCODE_BIN=$export_binary" >> "$GITHUB_ENV"
+        echo "binary=$export_binary" >> "$GITHUB_OUTPUT"

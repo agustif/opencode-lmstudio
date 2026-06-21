@@ -52,7 +52,7 @@ try {
   const configPath = join(root, "opencode.json")
   writeFileSync(configPath, JSON.stringify({
     $schema: "https://opencode.ai/config.json",
-    model: `lmstudio/${fixture.modelIDs.llm}`,
+    model: `lmstudio/${fixture.modelIDs.text}`,
     provider: {
       lmstudio: {
         npm: "@ai-sdk/openai-compatible",
@@ -84,13 +84,13 @@ try {
   }
   const provider = parsed.provider?.lmstudio
   assert(provider)
-  assert.deepEqual(Object.keys(provider.models ?? {}), [fixture.modelIDs.llm, fixture.modelIDs.vlm])
-  assert.deepEqual(provider.whitelist, [fixture.modelIDs.llm, fixture.modelIDs.vlm])
-  assert.equal((provider.models?.[fixture.modelIDs.vlm] as { attachment?: boolean }).attachment, true)
+  assert.deepEqual(Object.keys(provider.models ?? {}), [fixture.modelIDs.text, fixture.modelIDs.vision])
+  assert.deepEqual(provider.whitelist, [fixture.modelIDs.text, fixture.modelIDs.vision])
+  assert.equal((provider.models?.[fixture.modelIDs.vision] as { attachment?: boolean }).attachment, true)
 
-  const live = await run(opencode, ["run", "--model", `lmstudio/${fixture.modelIDs.llm}`, "SMOKE_PROMPT"], root, env)
+  const live = await run(opencode, ["run", "--model", `lmstudio/${fixture.modelIDs.text}`, "SMOKE_PROMPT"], root, env)
   assert.equal(live.code, 0, live.stderr)
-  assert(fixture.requests.some((request) => request.method === "GET" && request.url === "/api/v0/models"))
+  assert(fixture.requests.some((request) => request.method === "GET" && request.url === "/api/v1/models"))
   assert(fixture.requests.some((request) => request.method === "POST" && request.url === "/v1/chat/completions"))
   assert(fixture.requests.every((request) => request.authorization === "Bearer smoke-token"))
 

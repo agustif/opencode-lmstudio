@@ -30,7 +30,7 @@ jobs:
   release:
     name: Validate and optionally publish
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     environment: release
     steps:
       - uses: actions/checkout@v7
@@ -88,6 +88,9 @@ jobs:
       - name: Run real OpenCode CLI smoke
         run: npm run smoke:opencode
 
+      - name: Run current OpenCode ACP JSON-RPC smoke
+        run: npm run smoke:opencode:acp
+
       - name: Read pinned TUI OpenCode version
         id: tui
         shell: bash
@@ -98,6 +101,12 @@ jobs:
         with:
           version: ${{ steps.tui.outputs.version }}
           cache: false
+
+      - name: Run minimum OpenCode CLI smoke
+        run: npm run smoke:opencode
+
+      - name: Run minimum OpenCode ACP JSON-RPC smoke
+        run: npm run smoke:opencode:acp
 
       - name: Run Microsoft TUI Test and verify screenshots
         run: npm run test:tui:check
@@ -119,6 +128,12 @@ jobs:
       - name: Test the packed candidate with real OpenCode
         run: npm run smoke:opencode:package -- "${{ steps.package.outputs.tarball }}" --expected-version "$VERSION"
 
+      - name: Test packed candidate through current OpenCode's npm resolver
+        run: npm run smoke:opencode:resolver -- --tarball "${{ steps.package.outputs.tarball }}" --expected-version "$VERSION"
+
+      - name: Test packed candidate ACP stdout with current OpenCode
+        run: npm run smoke:opencode:acp:package -- "${{ steps.package.outputs.tarball }}" --expected-version "$VERSION"
+
       - name: Setup pinned OpenCode for packed-candidate TUI
         uses: ./.github/actions/setup-opencode
         with:
@@ -127,6 +142,12 @@ jobs:
 
       - name: Test every plugin-facing TUI view from the packed candidate
         run: npm run test:tui:package -- "${{ steps.package.outputs.tarball }}" --expected-version "$VERSION"
+
+      - name: Test packed candidate through minimum OpenCode's npm resolver
+        run: npm run smoke:opencode:resolver -- --tarball "${{ steps.package.outputs.tarball }}" --expected-version "$VERSION"
+
+      - name: Test packed candidate ACP stdout with minimum OpenCode
+        run: npm run smoke:opencode:acp:package -- "${{ steps.package.outputs.tarball }}" --expected-version "$VERSION"
 
       - name: Upload release evidence
         uses: actions/upload-artifact@v7
@@ -225,6 +246,14 @@ jobs:
         if: inputs.publish
         run: npm run smoke:opencode:package -- "opencode-lmstudio@$VERSION"
 
+      - name: Test public package through current OpenCode's npm resolver
+        if: inputs.publish
+        run: npm run smoke:opencode:resolver -- "opencode-lmstudio@$VERSION"
+
+      - name: Test public package ACP through current OpenCode's npm resolver
+        if: inputs.publish
+        run: npm run smoke:opencode:acp:package -- "opencode-lmstudio@$VERSION"
+
       - name: Setup pinned OpenCode for published-package TUI
         if: inputs.publish
         uses: ./.github/actions/setup-opencode
@@ -235,6 +264,14 @@ jobs:
       - name: Test the public npm package in the real OpenCode TUI
         if: inputs.publish
         run: npm run test:tui:package -- "opencode-lmstudio@$VERSION"
+
+      - name: Test public package through minimum OpenCode's npm resolver
+        if: inputs.publish
+        run: npm run smoke:opencode:resolver -- "opencode-lmstudio@$VERSION"
+
+      - name: Test public package ACP through minimum OpenCode's npm resolver
+        if: inputs.publish
+        run: npm run smoke:opencode:acp:package -- "opencode-lmstudio@$VERSION"
 
       - name: Upload public npm package evidence
         if: inputs.publish && always()

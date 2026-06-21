@@ -12,9 +12,9 @@ export interface LMStudioFixture {
   readonly requests: RecordedLMStudioRequest[]
   readonly serverURL: string
   readonly modelIDs: {
-    readonly llm: string
-    readonly vlm: string
-    readonly embeddings: string
+    readonly text: string
+    readonly vision: string
+    readonly embedding: string
   }
   close(): Promise<void>
 }
@@ -42,7 +42,7 @@ export async function createLMStudioFixture(
       return
     }
 
-    if (request.method === "GET" && request.url === "/api/v0/models") {
+    if (request.method === "GET" && request.url === "/api/v1/models") {
       response.writeHead(200, { "content-type": "application/json" })
       response.end(JSON.stringify(modelsResponse))
       return
@@ -59,7 +59,7 @@ export async function createLMStudioFixture(
         id: "chatcmpl-fixture",
         object: "chat.completion.chunk",
         created: Math.floor(Date.now() / 1000),
-        model: payload.model ?? modelIDs.llm,
+        model: payload.model ?? modelIDs.text,
       }
       response.write(`data: ${JSON.stringify({
         ...base,
@@ -78,9 +78,9 @@ export async function createLMStudioFixture(
   })
 
   const modelIDs = {
-    llm: modelsResponse.data.find((model) => model.type === "llm")?.id ?? "",
-    vlm: modelsResponse.data.find((model) => model.type === "vlm")?.id ?? "",
-    embeddings: modelsResponse.data.find((model) => model.type === "embeddings")?.id ?? "",
+    text: modelsResponse.models.find((model) => model.type === "llm" && model.capabilities?.vision === false)?.key ?? "",
+    vision: modelsResponse.models.find((model) => model.type === "llm" && model.capabilities?.vision === true)?.key ?? "",
+    embedding: modelsResponse.models.find((model) => model.type === "embedding")?.key ?? "",
   }
   if (Object.values(modelIDs).some((id) => !id)) throw new Error("LM Studio fixture is missing a representative model")
 

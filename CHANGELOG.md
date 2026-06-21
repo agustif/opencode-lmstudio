@@ -6,6 +6,52 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-06-21
+
+### Added
+
+- Runtime validation for LM Studio's native `GET /api/v1/models` schema.
+- Effective context tests for unloaded, singly loaded, and multiply loaded
+  model instances.
+- Issue-shaped Nemotron, GLM vision, authentication, changing-model-list,
+  embedding, and context regressions.
+- A real OpenCode ACP SDK gate for initialization, session creation, and
+  newline-delimited JSON-RPC stdout purity.
+- A clean HOME/XDG test for OpenCode's native npm-plugin resolver and cache.
+- Fixture provenance and a documented v1 endpoint/mapping contract.
+
+### Changed
+
+- The v1 line now requires LM Studio 0.4.0 or newer and OpenCode 1.17.7 or
+  newer.
+- Discovery uses only native `/api/v1/models`; OpenAI-compatible
+  `/v1/chat/completions` remains the inference boundary.
+- Model `key` and `display_name` replace v0 IDs and name heuristics.
+- Vision support comes from `capabilities.vision`.
+- Loaded models use their configured instance context. Multiple active
+  instances use the conservative minimum; unloaded models use the model
+  maximum.
+- Automatic discovery checks only LM Studio's documented default port. Custom
+  ports remain explicit provider configuration.
+- The pinned TUI compatibility gate now runs the supported OpenCode 1.17.7
+  minimum, while current CLI/ACP checks run 1.17.9.
+
+### Fixed
+
+- Generated model entries and whitelists no longer retain IDs removed by a
+  later LM Studio configuration load.
+- Loaded and unloaded embedding records remain outside the chat provider.
+- HTTP-200 error objects are rejected as unsupported native responses.
+- A false `trained_for_tool_use` value no longer risks being interpreted as a
+  reason to disable OpenCode tools.
+
+### Compatibility notes
+
+- Stable `0.3.1` remains available for earlier installations.
+- `trained_for_tool_use` and LM Studio reasoning settings are not translated
+  into non-equivalent OpenCode fields. See `docs/v1-contract.md`.
+- The prerelease remains on npm `next`; stable npm `latest` remains `0.3.1`.
+
 ## [1.0.0-rc.1] - 2026-06-21
 
 ### Added
@@ -69,5 +115,6 @@ community feedback is collected in
 - Contribution details and pull-request links are recorded in
   [`CONTRIBUTORS.md`](./CONTRIBUTORS.md).
 
-[Unreleased]: https://github.com/agustif/opencode-lmstudio/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/agustif/opencode-lmstudio/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/agustif/opencode-lmstudio/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/agustif/opencode-lmstudio/compare/v0.3.1...v1.0.0-rc.1

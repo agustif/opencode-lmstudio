@@ -97,8 +97,22 @@ jobs:
         with:
           version: ${{ steps.version.outputs.version }}
 
+      - name: Pack candidate
+        id: package
+        shell: bash
+        run: |
+          npm pack --json > package-preview.json
+          tarball=$(node -e 'const fs=require("node:fs"); const value=JSON.parse(fs.readFileSync("package-preview.json", "utf8")); process.stdout.write(value[0].filename)')
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
       - name: Run real OpenCode CLI smoke
         run: npm run smoke:opencode
+
+      - name: Run ACP JSON-RPC purity smoke
+        run: npm run smoke:opencode:acp
+
+      - name: Run native npm-resolver candidate smoke
+        run: npm run smoke:opencode:resolver -- --tarball "${{ steps.package.outputs.tarball }}" --expected-version "$(node -p 'require("./package.json").version')"
 
   pinned-opencode-tui:
     name: Pinned OpenCode TUI and screenshots
@@ -147,6 +161,93 @@ jobs:
             tui-traces/
           if-no-files-found: warn
           retention-days: 14
+
+  minimum-opencode-compatibility:
+    name: Minimum OpenCode CLI and ACP
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read minimum compatibility version
+        id: version
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < .opencode-tui-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup minimum supported OpenCode
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.version.outputs.version }}
+
+      - name: Pack candidate
+        id: package
+        shell: bash
+        run: |
+          npm pack --json > package-preview.json
+          tarball=$(node -e 'const fs=require("node:fs"); const value=JSON.parse(fs.readFileSync("package-preview.json", "utf8")); process.stdout.write(value[0].filename)')
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Run real OpenCode CLI smoke
+        run: npm run smoke:opencode
+
+      - name: Run ACP JSON-RPC purity smoke
+        run: npm run smoke:opencode:acp
+
+      - name: Run native npm-resolver candidate smoke
+        run: npm run smoke:opencode:resolver -- --tarball "${{ steps.package.outputs.tarball }}" --expected-version "$(node -p 'require("./package.json").version')"
+
+  platform-smoke:
+    name: ${{ matrix.os }} OpenCode CLI and ACP
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read current compatibility version
+        id: version
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < .opencode-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup current OpenCode
+        uses: ./.github/actions/setup-opencode
+        with:
+          version: ${{ steps.version.outputs.version }}
+
+      - name: Run real OpenCode CLI smoke
+        run: npm run smoke:opencode
+
+      - name: Run ACP JSON-RPC purity smoke
+        run: npm run smoke:opencode:acp
 
   dependency-review:
     name: Dependency review

@@ -35,27 +35,27 @@ const screenshotDefinitions: ScreenshotDefinition[] = [
   {
     name: "opencode-home",
     testTitle: "home view shows the selected LM Studio model and provider",
-    expectedText: ["Ask anything", "qwen2.5-coder-7b-instruct"],
+    expectedText: ["Ask anything", "Qwen2.5 Coder 7B Instruct"],
   },
   {
     name: "opencode-models",
-    testTitle: "model picker lists LLM and VLM models and excludes embeddings",
-    expectedText: ["Select model", "qwen2.5-coder-7b-instruct", "google/gemma-4-12b"],
+    testTitle: "model picker lists text and vision models and excludes embeddings",
+    expectedText: ["Select model", "Qwen2.5 Coder 7B Instruct", "Gemma 4 12B"],
   },
   {
     name: "opencode-model-search",
     testTitle: "model search filters to an LM Studio vision model",
-    expectedText: ["Select model", "google/gemma-4-12b"],
+    expectedText: ["Select model", "Gemma 4 12B"],
   },
   {
     name: "opencode-selected-model",
-    testTitle: "selected VLM returns to the OpenCode home view",
-    expectedText: ["Ask anything", "google/gemma-4-12b"],
+    testTitle: "selected vision model returns to the OpenCode home view",
+    expectedText: ["Ask anything", "Gemma 4 12B"],
   },
   {
     name: "opencode-chat",
     testTitle: "chat view streams a response through the selected LM Studio model",
-    expectedText: ["TUI_PROMPT", "FIXTURE_OK", "qwen2.5-coder-7b-instruct"],
+    expectedText: ["TUI_PROMPT", "FIXTURE_OK", "Qwen2.5 Coder 7B Instruct"],
   },
 ]
 

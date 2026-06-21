@@ -6,14 +6,10 @@ import {
 import { isIP } from "node:net"
 
 export const DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
-export const LM_STUDIO_MODELS_PATH = "/api/v0/models"
+export const LM_STUDIO_MODELS_PATH = "/api/v1/models"
 export const OPENAI_COMPATIBLE_PATH = "/v1"
-export const AUTO_DETECT_URLS = [
-  DEFAULT_LM_STUDIO_URL,
-  "http://127.0.0.1:8080",
-  "http://127.0.0.1:11434",
-] as const
-const API_KEY_ENV_VARS = ["LMSTUDIO_API_KEY", "LM_API_TOKEN"] as const
+export const AUTO_DETECT_URLS = [DEFAULT_LM_STUDIO_URL] as const
+const API_KEY_ENV_VARS = ["LM_API_TOKEN", "LMSTUDIO_API_KEY"] as const
 
 export interface DiscoverModelsOptions {
   readonly apiKey?: string
@@ -136,8 +132,8 @@ export async function discoverModels(
   return result.data
 }
 
-export function isGenerativeModel(model: LMStudioModel): model is LMStudioModel & { type: "llm" | "vlm" } {
-  return model.type === "llm" || model.type === "vlm"
+export function isGenerativeModel(model: LMStudioModel): model is LMStudioModel & { type: "llm" } {
+  return model.type === "llm"
 }
 
 export interface AutoDetectedLMStudio {
@@ -146,7 +142,7 @@ export interface AutoDetectedLMStudio {
   readonly response: LMStudioModelsResponse
 }
 
-/** Connect to the first common local endpoint that returns valid LM Studio metadata. */
+/** Connect to LM Studio's documented default local endpoint when it validates. */
 export async function autoDetectLMStudio(): Promise<AutoDetectedLMStudio | undefined> {
   for (const serverURL of AUTO_DETECT_URLS) {
     const apiKey = getLMStudioApiKey(undefined, serverURL)

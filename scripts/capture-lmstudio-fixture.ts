@@ -1,34 +1,18 @@
 #!/usr/bin/env bun
 
-import { spawnSync } from "node:child_process"
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { z } from "zod"
 import { LMStudioModelsResponseSchema, type LMStudioModel } from "../src/types/index.ts"
+import { DEFAULT_LM_STUDIO_URL, discoverModels, getLMStudioApiKey } from "../src/utils/lmstudio-api.ts"
 
-const DEFAULT_URL = "http://127.0.0.1:1234"
 const DEFAULT_OUTPUT = "test/fixtures/lmstudio-models.json"
-const SAFE_TYPES = ["llm", "vlm", "embeddings"] as const
 
-const LMSDownloadedModelSchema = z.looseObject({
-  type: z.string().min(1),
-  modelKey: z.string().min(1),
-  publisher: z.string().optional(),
-  format: z.string().optional(),
-  architecture: z.string().optional(),
-  quantization: z.object({ name: z.string().optional() }).optional(),
-  vision: z.boolean().optional(),
-  maxContextLength: z.number().int().positive().optional(),
-})
-const LMSDownloadedModelsSchema = z.array(LMSDownloadedModelSchema)
-
-type Source = "api" | "lms"
 interface Options {
   readonly all: boolean
   readonly input?: string
+  readonly lmStudioVersion: string
   readonly output: string
   readonly serverURL: string
-  readonly source: Source
 }
 
 function optionValue(name: string): string | undefined {
@@ -37,105 +21,80 @@ function optionValue(name: string): string | undefined {
 }
 
 function options(): Options {
-  const source = optionValue("--source") ?? "api"
-  if (source !== "api" && source !== "lms") throw new Error("--source must be api or lms")
   const input = optionValue("--input")
+  const lmStudioVersion = optionValue("--lm-studio-version")
+  if (!lmStudioVersion) throw new Error("--lm-studio-version is required for fixture provenance")
   return {
     all: process.argv.includes("--all"),
     ...(input ? { input: resolve(input) } : {}),
+    lmStudioVersion,
     output: resolve(optionValue("--output") ?? DEFAULT_OUTPUT),
-    serverURL: optionValue("--url") ?? process.env.LMSTUDIO_BASE_URL ?? DEFAULT_URL,
-    source,
+    serverURL: optionValue("--url") ?? process.env.LMSTUDIO_BASE_URL ?? DEFAULT_LM_STUDIO_URL,
   }
-}
-
-function modelsURL(serverURL: string): string {
-  const url = new URL(serverURL)
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("LM Studio fixture URL must use http or https")
-  }
-  url.hash = ""
-  url.search = ""
-  url.pathname = `${url.pathname.replace(/\/+$/, "").replace(/\/v1$/, "")}/api/v0/models`
-  return url.toString()
 }
 
 function sanitize(model: LMStudioModel): LMStudioModel {
   return {
-    id: model.id,
-    object: "model",
     type: model.type,
-    ...(model.publisher ? { publisher: model.publisher } : {}),
-    ...(model.arch ? { arch: model.arch } : {}),
-    ...(model.compatibility_type ? { compatibility_type: model.compatibility_type } : {}),
-    ...(model.quantization ? { quantization: model.quantization } : {}),
-    ...(model.state ? { state: model.state } : {}),
-    ...(model.max_context_length ? { max_context_length: model.max_context_length } : {}),
+    key: model.key,
+    display_name: model.display_name,
+    publisher: model.publisher,
+    ...(model.architecture !== undefined ? { architecture: model.architecture } : {}),
+    quantization: model.quantization,
+    loaded_instances: model.loaded_instances.map((instance) => ({
+      id: instance.id,
+      config: { context_length: instance.config.context_length },
+    })),
+    max_context_length: model.max_context_length,
+    format: model.format,
+    ...(model.capabilities ? {
+      capabilities: {
+        vision: model.capabilities.vision,
+        trained_for_tool_use: model.capabilities.trained_for_tool_use,
+        ...(model.capabilities.reasoning ? { reasoning: model.capabilities.reasoning } : {}),
+      },
+    } : {}),
   }
 }
 
 function selectRepresentative(models: LMStudioModel[]): LMStudioModel[] {
-  return SAFE_TYPES.flatMap((type) => models.find((model) => model.type === type) ?? [])
+  const text = models.find((model) => model.type === "llm" && model.capabilities?.vision !== true)
+  const vision = models.find((model) => model.type === "llm" && model.capabilities?.vision === true)
+  const embedding = models.find((model) => model.type === "embedding")
+  const selected = [text, vision, embedding].filter((model): model is LMStudioModel => model !== undefined)
+  if (selected.length !== 3) {
+    throw new Error("LM Studio must provide representative text, vision, and embedding models")
+  }
+  return selected
 }
 
-function mapDownloadedModels(value: unknown): LMStudioModel[] {
-  const parsed = LMSDownloadedModelsSchema.safeParse(value)
-  if (!parsed.success) throw new Error(`lms ls --json response failed validation: ${parsed.error.message}`)
-  return parsed.data.map((model) => ({
-    id: model.modelKey,
-    object: "model" as const,
-    type: model.type === "embedding" ? "embeddings" : model.type === "llm" && model.vision ? "vlm" : model.type,
-    ...(model.publisher ? { publisher: model.publisher } : {}),
-    ...(model.architecture ? { arch: model.architecture } : {}),
-    ...(model.format ? { compatibility_type: model.format } : {}),
-    ...(model.quantization?.name ? { quantization: model.quantization.name } : {}),
-    state: "not-loaded",
-    ...(model.maxContextLength ? { max_context_length: model.maxContextLength } : {}),
-  }))
-}
-
-function readLMSModels(config: Options): LMStudioModel[] {
-  const raw = config.input
-    ? readFileSync(config.input, "utf8")
-    : (() => {
-        const result = spawnSync("lms", ["ls", "--json"], { encoding: "utf8" })
-        if (result.error) throw result.error
-        if (result.status !== 0) throw new Error(result.stderr || `lms ls --json exited ${result.status}`)
-        return result.stdout
-      })()
-  return mapDownloadedModels(JSON.parse(raw) as unknown)
-}
-
-async function readAPIModels(config: Options): Promise<LMStudioModel[]> {
-  const payload: unknown = config.input
-    ? JSON.parse(readFileSync(config.input, "utf8"))
-    : await (async () => {
-        const apiKey = process.env.LMSTUDIO_API_KEY
-        const response = await fetch(modelsURL(config.serverURL), {
-          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-          signal: AbortSignal.timeout(10_000),
-        })
-        if (!response.ok) throw new Error(`LM Studio models API returned HTTP ${response.status}`)
-        return response.json() as Promise<unknown>
-      })()
-  const parsed = LMStudioModelsResponseSchema.safeParse(payload)
-  if (!parsed.success) throw new Error(`LM Studio models API response failed validation: ${parsed.error.message}`)
-  return parsed.data.data
+async function readModels(config: Options): Promise<LMStudioModel[]> {
+  if (config.input) {
+    const raw: unknown = JSON.parse(readFileSync(config.input, "utf8"))
+    const parsed = LMStudioModelsResponseSchema.safeParse(raw)
+    if (!parsed.success) throw new Error(`LM Studio fixture input failed validation: ${parsed.error.message}`)
+    return parsed.data.models
+  }
+  const apiKey = getLMStudioApiKey(undefined, config.serverURL)
+  return (await discoverModels(config.serverURL, { apiKey, timeoutMs: 10_000 })).models
 }
 
 const config = options()
-const models = config.source === "lms" ? readLMSModels(config) : await readAPIModels(config)
-const sanitized = models
-  .filter((model) => SAFE_TYPES.includes(model.type as typeof SAFE_TYPES[number]))
+const sanitized = (await readModels(config))
+  .filter((model) => model.type === "llm" || model.type === "embedding")
   .map(sanitize)
-  .sort((left, right) => left.type.localeCompare(right.type) || left.id.localeCompare(right.id))
-const data = config.all ? sanitized : selectRepresentative(sanitized)
-if (data.length === 0) throw new Error("LM Studio returned no safe fixture models")
-if (!config.all && data.length !== SAFE_TYPES.length) {
-  const available = new Set(data.map((model) => model.type))
-  const missing = SAFE_TYPES.filter((type) => !available.has(type))
-  throw new Error(`LM Studio is missing representative fixture model types: ${missing.join(", ")}`)
-}
+  .sort((left, right) => left.type.localeCompare(right.type) || left.key.localeCompare(right.key))
+const models = config.all ? sanitized : selectRepresentative(sanitized)
+if (models.length === 0) throw new Error("LM Studio returned no safe fixture models")
 
-writeFileSync(config.output, `${JSON.stringify({ object: "list", data }, null, 2)}\n`)
-console.log(`Wrote ${data.length} sanitized LM Studio models from ${config.source} to ${config.output}`)
+const fixture = {
+  _fixture: {
+    schema: "lm-studio-native-api-v1",
+    source: config.input ? "sanitized input" : "sanitized local capture",
+    lm_studio_version: config.lmStudioVersion,
+    captured_at: new Date().toISOString().slice(0, 10),
+  },
+  models,
+}
+writeFileSync(config.output, `${JSON.stringify(fixture, null, 2)}\n`)
+console.log(`Wrote ${models.length} sanitized native v1 models to ${config.output}`)

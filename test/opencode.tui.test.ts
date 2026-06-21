@@ -34,22 +34,22 @@ test.use({
 
 test("home view shows the selected LM Studio model and provider", async ({ terminal }) => {
   await expect(terminal.getByText("Ask anything", { strict: false })).toBeVisible({ timeout: 40_000 })
-  await expect(terminal.getByText("qwen2.5-coder-7b-instruct", { strict: false })).toBeVisible()
+  await expect(terminal.getByText("Qwen2.5 Coder 7B Instruct", { strict: false })).toBeVisible()
   await expect(terminal.getByText(expectedProviderName, { strict: false })).toBeVisible()
   await expect(terminal.getByText("text-embedding-nomic-embed-text-v1.5", { strict: false })).not.toBeVisible()
 
   terminal.kill()
 })
 
-test("model picker lists LLM and VLM models and excludes embeddings", async ({ terminal }) => {
+test("model picker lists text and vision models and excludes embeddings", async ({ terminal }) => {
   await expect(terminal.getByText("Ask anything", { strict: false })).toBeVisible({ timeout: 40_000 })
   terminal.keyPress("x", { ctrl: true })
   terminal.write("m")
   await expect(terminal.getByText("Select model", { strict: false })).toBeVisible()
   terminal.write(expectedProviderName)
   await waitForModelPickerQuery(terminal, expectedProviderName)
-  await expect(terminal.getByText("qwen2.5-coder-7b-instruct", { strict: false })).toBeVisible()
-  await expect(terminal.getByText("google/gemma-4-12b", { strict: false })).toBeVisible()
+  await expect(terminal.getByText("Qwen2.5 Coder 7B Instruct", { strict: false })).toBeVisible()
+  await expect(terminal.getByText("Gemma 4 12B", { strict: false })).toBeVisible()
   await expect(terminal.getByText(expectedProviderName, { strict: false })).toBeVisible()
   await expect(terminal.getByText("text-embedding-nomic-embed-text-v1.5", { strict: false })).not.toBeVisible()
   terminal.kill()
@@ -60,25 +60,25 @@ test("model search filters to an LM Studio vision model", async ({ terminal }) =
   terminal.keyPress("x", { ctrl: true })
   terminal.write("m")
   await expect(terminal.getByText("Select model", { strict: false })).toBeVisible()
-  terminal.write("google/gemma-4-12b")
-  await waitForModelPickerQuery(terminal, "google/gemma-4-12b")
-  await expect(terminal.getByText("google/gemma-4-12b", { strict: false })).toBeVisible()
+  terminal.write("Gemma 4 12B")
+  await waitForModelPickerQuery(terminal, "Gemma 4 12B")
+  await expect(terminal.getByText("Gemma 4 12B", { strict: false })).toBeVisible()
   await expect(terminal.getByText(expectedProviderName, { strict: false })).toBeVisible()
   await expect(terminal.getByText("qwen2.5-coder-7b-instruct", { strict: false })).not.toBeVisible()
   terminal.kill()
 })
 
-test("selected VLM returns to the OpenCode home view", async ({ terminal }) => {
+test("selected vision model returns to the OpenCode home view", async ({ terminal }) => {
   await expect(terminal.getByText("Ask anything", { strict: false })).toBeVisible({ timeout: 40_000 })
   terminal.keyPress("x", { ctrl: true })
   terminal.write("m")
   await expect(terminal.getByText("Select model", { strict: false })).toBeVisible()
-  terminal.write("google/gemma-4-12b")
-  await waitForModelPickerQuery(terminal, "google/gemma-4-12b")
-  await expect(terminal.getByText("google/gemma-4-12b", { strict: false })).toBeVisible()
+  terminal.write("Gemma 4 12B")
+  await waitForModelPickerQuery(terminal, "Gemma 4 12B")
+  await expect(terminal.getByText("Gemma 4 12B", { strict: false })).toBeVisible()
   terminal.keyPress(Key.Enter)
   await expect(terminal.getByText("Ask anything", { strict: false })).toBeVisible()
-  await expect(terminal.getByText("google/gemma-4-12b", { strict: false })).toBeVisible()
+  await expect(terminal.getByText("Gemma 4 12B", { strict: false })).toBeVisible()
   terminal.kill()
 })
 
@@ -87,6 +87,6 @@ test("chat view streams a response through the selected LM Studio model", async 
   terminal.write("TUI_PROMPT")
   terminal.keyPress(Key.Enter)
   await expect(terminal.getByText("FIXTURE_OK", { strict: false })).toBeVisible({ timeout: 40_000 })
-  await expect(terminal.getByText("qwen2.5-coder-7b-instruct", { strict: false })).toBeVisible()
+  await expect(terminal.getByText("Qwen2.5 Coder 7B Instruct", { strict: false })).toBeVisible()
   terminal.kill()
 })

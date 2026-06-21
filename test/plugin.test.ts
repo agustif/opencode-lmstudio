@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
 import type { PluginInput } from "@opencode-ai/plugin"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { LMStudioPlugin } from "../src/index.ts"
-import type { OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
-import { enhanceConfig } from "../src/plugin/enhance-config.ts"
+import { effectiveContextLength, enhanceConfig, toModelConfig } from "../src/plugin/enhance-config.ts"
+import type { LMStudioModel, OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
 import {
   LMStudioAPIError,
   autoDetectLMStudio,
@@ -14,24 +14,39 @@ import {
   toOpenAICompatibleURL,
 } from "../src/utils/lmstudio-api.ts"
 
-function model(overrides: Record<string, unknown> = {}) {
+function model(overrides: Record<string, unknown> = {}): LMStudioModel {
   return {
-    id: "publisher/model",
-    object: "model",
     type: "llm",
+    key: "publisher/model",
+    display_name: "Publisher Model",
     publisher: "publisher",
-    arch: "qwen3",
-    compatibility_type: "gguf",
-    quantization: "Q4_K_M",
-    state: "not-loaded",
+    architecture: "qwen3",
+    quantization: { name: "Q4_K_M", bits_per_weight: 4 },
+    loaded_instances: [],
     max_context_length: 32_768,
+    format: "gguf",
+    capabilities: { vision: false, trained_for_tool_use: true },
     ...overrides,
-  }
+  } as LMStudioModel
 }
 
-function modelsResponse(data: Array<Record<string, unknown>>) {
-  return new Response(JSON.stringify({ object: "list", data }), {
-    status: 200,
+function embedding(key: string, loadedContext?: number): LMStudioModel {
+  return model({
+    type: "embedding",
+    key,
+    display_name: key,
+    architecture: null,
+    capabilities: undefined,
+    loaded_instances: loadedContext
+      ? [{ id: `${key}:loaded`, config: { context_length: loadedContext } }]
+      : [],
+    max_context_length: 2_048,
+  })
+}
+
+function modelsResponse(models: Array<Record<string, unknown> | LMStudioModel>, status = 200) {
+  return new Response(JSON.stringify({ models }), {
+    status,
     headers: { "Content-Type": "application/json" },
   })
 }
@@ -51,18 +66,18 @@ afterEach(() => {
   delete process.env.CUSTOM_LM_STUDIO_KEY
 })
 
-describe("LM Studio API", () => {
-  it("normalizes configured provider URLs", () => {
+describe("LM Studio native API v1", () => {
+  it("normalizes provider URLs onto the documented native and compatible endpoints", () => {
     expect(normalizeLMStudioURL("http://127.0.0.1:1234/v1/")).toBe("http://127.0.0.1:1234")
     expect(toOpenAICompatibleURL("https://models.example.test/v1")).toBe("https://models.example.test/v1")
-    expect(toModelsURL("https://models.example.test/v1")).toBe("https://models.example.test/api/v0/models")
+    expect(toModelsURL("https://models.example.test/v1")).toBe("https://models.example.test/api/v1/models")
   })
 
   it("rejects unsupported URL protocols", () => {
     expect(() => normalizeLMStudioURL("ws://127.0.0.1:1234")).toThrow(LMStudioAPIError)
   })
 
-  it("uses the metadata-rich endpoint and forwards an explicit API key", async () => {
+  it("validates the native response and forwards an explicit API token", async () => {
     const fetcher = vi.fn(async () => modelsResponse([model()]))
 
     const response = await discoverModels("https://models.example.test/v1", {
@@ -70,90 +85,178 @@ describe("LM Studio API", () => {
       fetch: fetcher as typeof fetch,
     })
 
-    expect(response.data).toHaveLength(1)
+    expect(response.models).toHaveLength(1)
     expect(fetcher).toHaveBeenCalledOnce()
     expect(fetcher).toHaveBeenCalledWith(
-      "https://models.example.test/api/v0/models",
+      "https://models.example.test/api/v1/models",
       expect.objectContaining({ headers: { Authorization: "Bearer secret" } }),
     )
   })
 
-  it("rejects responses that omit official model metadata", async () => {
-    const fetcher = vi.fn(async () => modelsResponse([{ id: "unknown/model" }]))
+  it("rejects HTTP-200 error bodies instead of treating status as endpoint support", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: "Unexpected endpoint" }), { status: 200 }))
 
     await expect(discoverModels("http://127.0.0.1:1234", {
       fetch: fetcher as typeof fetch,
     })).rejects.toThrow("unsupported response")
   })
 
-  it("connects to the first common local port with valid metadata", async () => {
-    const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response("not LM Studio", { status: 200 }))
-      .mockResolvedValueOnce(modelsResponse([model()]))
+  it.each([401, 403])("does not retry HTTP %i authentication failures against an older endpoint", async (status) => {
+    const fetcher = vi.fn(async () => modelsResponse([], status))
+
+    await expect(discoverModels("http://127.0.0.1:1234", {
+      fetch: fetcher as typeof fetch,
+    })).rejects.toThrow(`HTTP ${status}`)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://127.0.0.1:1234/api/v1/models",
+      expect.any(Object),
+    )
+  })
+
+  it("auto-detects only LM Studio's documented default local endpoint", async () => {
+    const fetcher = vi.fn(async () => modelsResponse([model()]))
     vi.stubGlobal("fetch", fetcher)
 
     const detected = await autoDetectLMStudio()
 
-    expect(detected?.serverURL).toBe("http://127.0.0.1:8080")
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(detected?.serverURL).toBe("http://127.0.0.1:1234")
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
-  it("limits automatic environment-token lookup to local and private hosts", () => {
-    process.env.LMSTUDIO_API_KEY = "private-token"
+  it("limits automatic token lookup to local and private hosts", () => {
+    process.env.LM_API_TOKEN = "official-token"
+    process.env.LMSTUDIO_API_KEY = "compatibility-token"
     process.env.CUSTOM_LM_STUDIO_KEY = "explicit-token"
 
     expect(isLocalOrPrivateURL("http://127.0.0.1:1234/v1")).toBe(true)
     expect(isLocalOrPrivateURL("http://192.168.1.10:1234/v1")).toBe(true)
     expect(isLocalOrPrivateURL("http://[::1]:1234/v1")).toBe(true)
     expect(isLocalOrPrivateURL("https://models.example.test/v1")).toBe(false)
-    expect(getLMStudioApiKey(undefined, "http://127.0.0.1:1234")).toBe("private-token")
+    expect(getLMStudioApiKey(undefined, "http://127.0.0.1:1234")).toBe("official-token")
     expect(getLMStudioApiKey(undefined, "https://models.example.test")).toBeUndefined()
     expect(getLMStudioApiKey("{env:CUSTOM_LM_STUDIO_KEY}", "https://models.example.test")).toBe("explicit-token")
   })
 })
 
+describe("model mapping", () => {
+  it("uses the model maximum when unloaded and the conservative active minimum when loaded", () => {
+    const unloaded = model({ max_context_length: 131_072 })
+    const single = model({
+      max_context_length: 131_072,
+      loaded_instances: [{ id: "single", config: { context_length: 65_536 } }],
+    })
+    const multiple = model({
+      max_context_length: 131_072,
+      loaded_instances: [
+        { id: "large", config: { context_length: 65_536 } },
+        { id: "small", config: { context_length: 16_384 } },
+      ],
+    })
+
+    expect(effectiveContextLength(unloaded)).toBe(131_072)
+    expect(effectiveContextLength(single)).toBe(65_536)
+    expect(effectiveContextLength(multiple)).toBe(16_384)
+    expect(toModelConfig(multiple as LMStudioModel & { type: "llm" }).limit).toEqual({
+      context: 16_384,
+      output: 4_096,
+    })
+  })
+
+  it("maps documented vision while leaving tool training and reasoning semantically distinct", () => {
+    const mapped = toModelConfig(model({
+      key: "zai-org/glm-4.5v",
+      display_name: "GLM 4.5V",
+      capabilities: {
+        vision: true,
+        trained_for_tool_use: false,
+        reasoning: { allowed_options: ["off", "on"], default: "on" },
+      },
+    }) as LMStudioModel & { type: "llm" })
+
+    expect(mapped).toMatchObject({
+      id: "zai-org/glm-4.5v",
+      name: "GLM 4.5V",
+      attachment: true,
+      modalities: { input: ["text", "image"], output: ["text"] },
+    })
+    expect(mapped).not.toHaveProperty("tool_call")
+    expect(mapped).not.toHaveProperty("reasoning")
+  })
+})
+
 describe("config enhancement", () => {
-  it("registers only typed generative models and skips embeddings", async () => {
+  it("registers Nemotron and GLM from typed records without name heuristics", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
-      model({ id: "plain-model-with-no-family-name" }),
-      model({ id: "vision/model", type: "vlm", max_context_length: 65_536 }),
-      model({ id: "embedding/model", type: "embeddings" }),
-      model({ id: "future/model", type: "future-domain" }),
+      model({ key: "nvidia/nemotron-3-nano-omni", display_name: "Nemotron 3 Nano Omni" }),
+      model({
+        key: "zai-org/glm-4.5v",
+        display_name: "GLM 4.5V",
+        capabilities: { vision: true, trained_for_tool_use: true },
+      }),
+      embedding("embedding/unloaded"),
+      embedding("embedding/loaded", 1_024),
+      model({ type: "future-domain", key: "future/model", display_name: "Future Model" }),
     ])))
     const value = config()
 
     const result = await enhanceConfig(value, logger())
 
-    expect(result).toMatchObject({ discovered: 2, skippedEmbeddings: 1, skippedUnsupported: 1 })
+    expect(result).toMatchObject({ discovered: 2, skippedEmbeddings: 2, skippedUnsupported: 1 })
     expect(value.provider?.lmstudio?.options?.baseURL).toBe("http://127.0.0.1:1234/v1")
     expect(value.provider?.lmstudio?.models).toEqual({
-      "plain-model-with-no-family-name": expect.objectContaining({
-        id: "plain-model-with-no-family-name",
-        name: "plain-model-with-no-family-name",
+      "nvidia/nemotron-3-nano-omni": expect.objectContaining({
+        name: "Nemotron 3 Nano Omni",
+        attachment: false,
         modalities: { input: ["text"], output: ["text"] },
-        limit: { context: 32_768, output: 8_192 },
       }),
-      "vision/model": expect.objectContaining({
+      "zai-org/glm-4.5v": expect.objectContaining({
+        name: "GLM 4.5V",
+        attachment: true,
         modalities: { input: ["text", "image"], output: ["text"] },
-        limit: { context: 65_536, output: 8_192 },
       }),
     })
     expect(value.provider?.lmstudio?.whitelist).toEqual([
-      "plain-model-with-no-family-name",
-      "vision/model",
+      "nvidia/nemotron-3-nano-omni",
+      "zai-org/glm-4.5v",
     ])
   })
 
-  it("keeps model limits unset when LM Studio omits the context length", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model({ max_context_length: undefined })])))
+  it("replaces stale generated models and whitelist entries on a later config load", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(modelsResponse([
+        model({ key: "model/removed", display_name: "Removed" }),
+        model({ key: "model/retained", display_name: "Retained" }),
+      ]))
+      .mockResolvedValueOnce(modelsResponse([
+        model({ key: "model/retained", display_name: "Retained" }),
+        model({ key: "model/added", display_name: "Added" }),
+      ]))
+    vi.stubGlobal("fetch", fetcher)
     const value = config()
 
     await enhanceConfig(value, logger())
+    await enhanceConfig(value, logger())
 
-    expect(value.provider?.lmstudio?.models?.["publisher/model"]).not.toHaveProperty("limit")
+    expect(Object.keys(value.provider?.lmstudio?.models ?? {})).toEqual(["model/retained", "model/added"])
+    expect(value.provider?.lmstudio?.whitelist).toEqual(["model/retained", "model/added"])
   })
 
-  it("preserves explicit user model overrides", async () => {
+  it("clears the generated model set when no chat models remain", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(modelsResponse([model({ key: "model/removed", display_name: "Removed" })]))
+      .mockResolvedValueOnce(modelsResponse([embedding("embedding/only")]))
+    vi.stubGlobal("fetch", fetcher)
+    const value = config()
+
+    await enhanceConfig(value, logger())
+    await enhanceConfig(value, logger())
+
+    expect(value.provider?.lmstudio?.models).toEqual({})
+    expect(value.provider?.lmstudio?.whitelist).toEqual([])
+  })
+
+  it("preserves explicit model overrides and whitelists across discovery changes", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model()])))
     const value = config({
       provider: {
@@ -175,12 +278,29 @@ describe("config enhancement", () => {
     })
     expect(value.provider?.lmstudio?.whitelist).toEqual(["publisher/model"])
     expect(fetch).toHaveBeenCalledWith(
-      "https://models.example.test/api/v0/models",
+      "https://models.example.test/api/v1/models",
       expect.objectContaining({ headers: { Authorization: "Bearer secret" } }),
     )
   })
 
-  it("leaves config unchanged when the default LM Studio server is unavailable", async () => {
+  it("preserves an explicitly empty whitelist", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([model()])))
+    const value = config({
+      provider: {
+        lmstudio: {
+          options: { baseURL: "http://127.0.0.1:1234/v1" },
+          whitelist: [],
+        },
+      },
+    })
+
+    await enhanceConfig(value, logger())
+    await enhanceConfig(value, logger())
+
+    expect(value.provider?.lmstudio?.whitelist).toEqual([])
+  })
+
+  it("leaves config unchanged when the default server is unavailable", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline") }))
     const value = config()
     const log = logger()

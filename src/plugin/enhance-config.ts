@@ -7,6 +7,7 @@ import type {
 } from "../types/index.ts"
 import {
   DEFAULT_LM_STUDIO_URL,
+  LM_STUDIO_MODELS_PATH,
   autoDetectLMStudio,
   discoverModels,
   getLMStudioApiKey,
@@ -17,44 +18,59 @@ import {
 
 export interface EnhanceConfigResult {
   readonly discovered: number
+  readonly discoveryPath: string
   readonly skippedEmbeddings: number
   readonly skippedUnsupported: number
   readonly serverURL: string
 }
 
 const MAX_OUTPUT_RESERVE = 8_192
+interface GeneratedState {
+  readonly models: Readonly<Record<string, ModelConfig>>
+  readonly whitelist?: readonly string[]
+}
+const generatedStates = new WeakMap<OpenCodeConfig, GeneratedState>()
 
 function getString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
 }
 
-export function toModelConfig(model: LMStudioModel & { type: "llm" | "vlm" }): ModelConfig {
-  const input: Array<"text" | "image"> = model.type === "vlm" ? ["text", "image"] : ["text"]
+export function effectiveContextLength(model: LMStudioModel): number {
+  const loaded = model.loaded_instances.map((instance) => instance.config.context_length)
+  return loaded.length === 0
+    ? model.max_context_length
+    : Math.min(model.max_context_length, ...loaded)
+}
+
+export function toModelConfig(model: LMStudioModel & { type: "llm" }): ModelConfig {
+  const vision = model.capabilities?.vision === true
+  const input: Array<"text" | "image"> = vision ? ["text", "image"] : ["text"]
+  const context = effectiveContextLength(model)
 
   return {
-    id: model.id,
-    name: model.id,
-    attachment: model.type === "vlm",
+    id: model.key,
+    name: model.display_name,
+    attachment: vision,
     modalities: {
       input,
       output: ["text"],
     },
-    // LM Studio reports a shared context window but no separate output limit.
-    // Reserve a bounded quarter of that official window so OpenCode can use
-    // context-aware compaction without reserving the entire prompt budget.
-    ...(model.max_context_length ? {
-      limit: {
-        context: model.max_context_length,
-        output: Math.min(MAX_OUTPUT_RESERVE, Math.max(1, Math.floor(model.max_context_length / 4))),
-      },
-    } : {}),
+    // LM Studio reports context capacity but not a distinct generation limit.
+    // This conservative plugin policy gives OpenCode the required output field
+    // without claiming that LM Studio supplied one.
+    limit: {
+      context,
+      output: Math.min(MAX_OUTPUT_RESERVE, Math.max(1, Math.floor(context / 4))),
+    },
   }
 }
 
 function mergeProvider(
   existing: ProviderConfig | undefined,
+  explicitModels: Record<string, ModelConfig>,
   serverURL: string,
   discoveredModels: Record<string, ModelConfig>,
+  shouldGenerateWhitelist: boolean,
   apiKey?: string,
 ): ProviderConfig {
   return {
@@ -69,9 +85,9 @@ function mergeProvider(
     // Explicit user configuration always wins over discovered metadata.
     models: {
       ...discoveredModels,
-      ...existing?.models,
+      ...explicitModels,
     },
-    ...(!existing?.whitelist?.length && Object.keys(discoveredModels).length > 0
+    ...(shouldGenerateWhitelist
       ? { whitelist: Object.keys(discoveredModels) }
       : {}),
   }
@@ -87,6 +103,7 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
     const detected = existing ? undefined : await autoDetectLMStudio()
     if (!existing && !detected) {
       await log("debug", "LM Studio model discovery unavailable", {
+        discoveryPath: LM_STUDIO_MODELS_PATH,
         serverURL: DEFAULT_LM_STUDIO_URL,
       })
       return undefined
@@ -95,18 +112,41 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
     const serverURL = normalizeLMStudioURL(configuredBaseURL ?? detected?.serverURL ?? DEFAULT_LM_STUDIO_URL)
     const apiKey = existing ? getLMStudioApiKey(explicitApiKey, serverURL) : detected?.apiKey
     const response = detected?.response ?? await discoverModels(serverURL, { apiKey })
-    const generative = response.data.filter(isGenerativeModel)
+    const generative = response.models.filter(isGenerativeModel)
     const discoveredModels = Object.fromEntries(
-      generative.map((model) => [model.id, toModelConfig(model)]),
+      generative.map((model) => [model.key, toModelConfig(model)]),
+    )
+    const previousGenerated = generatedStates.get(config)
+    const generatedWhitelist = previousGenerated?.whitelist !== undefined
+      && previousGenerated.whitelist.length === (existing?.whitelist?.length ?? 0)
+      && previousGenerated.whitelist.every((id, index) => existing?.whitelist?.[index] === id)
+    const shouldGenerateWhitelist = generatedWhitelist || existing?.whitelist === undefined
+    const explicitModels = Object.fromEntries(
+      Object.entries(existing?.models ?? {}).filter(([id, model]) => {
+        const generated = previousGenerated?.models[id]
+        return generated === undefined || JSON.stringify(model) !== JSON.stringify(generated)
+      }),
     )
 
     config.provider ??= {}
-    config.provider.lmstudio = mergeProvider(existing, serverURL, discoveredModels, apiKey)
+    config.provider.lmstudio = mergeProvider(
+      existing,
+      explicitModels,
+      serverURL,
+      discoveredModels,
+      shouldGenerateWhitelist,
+      apiKey,
+    )
+    generatedStates.set(config, {
+      models: discoveredModels,
+      ...(shouldGenerateWhitelist ? { whitelist: Object.keys(discoveredModels) } : {}),
+    })
 
     const result = {
       discovered: generative.length,
-      skippedEmbeddings: response.data.filter((model) => model.type === "embeddings").length,
-      skippedUnsupported: response.data.filter((model) => !isGenerativeModel(model) && model.type !== "embeddings").length,
+      discoveryPath: LM_STUDIO_MODELS_PATH,
+      skippedEmbeddings: response.models.filter((model) => model.type === "embedding").length,
+      skippedUnsupported: response.models.filter((model) => !isGenerativeModel(model) && model.type !== "embedding").length,
       serverURL,
     }
     await log("info", "Discovered LM Studio models", result)
@@ -115,6 +155,7 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
     const configured = Boolean(existing)
     const serverURL = configuredBaseURL ?? DEFAULT_LM_STUDIO_URL
     await log(configured ? "warn" : "debug", "LM Studio model discovery unavailable", {
+      discoveryPath: LM_STUDIO_MODELS_PATH,
       serverURL,
       error: error instanceof Error ? error.message : String(error),
     })

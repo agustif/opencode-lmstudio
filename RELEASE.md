@@ -14,8 +14,8 @@ explicitly approved.
 exact SemVer version without build metadata, emits the Git tag and release
 channel, and is covered by unit tests. Release commands use its output directly.
 
-The first typed-discovery candidate is `1.0.0-rc.1`. Its canonical opt-in,
-rollback, test matrix, and feedback tracker is
+The current native-discovery candidate is `1.0.0-rc.2`. Its canonical opt-in,
+test matrix, and feedback tracker is
 [#34](https://github.com/agustif/opencode-lmstudio/issues/34).
 
 ## Release gate
@@ -27,11 +27,11 @@ Before proposing a release:
 3. Confirm `package.json`, `package-lock.json`, and
    `docs/releases/v<version>.md` name the exact candidate.
 4. Run `npm run release:check`.
-5. Confirm the real OpenCode CLI smoke and every plugin-facing Microsoft TUI
-   Test view pass from both the source build and packed candidate.
+5. Confirm the minimum and current OpenCode CLI smoke, ACP stdio, and every
+   plugin-facing Microsoft TUI Test view pass from source.
 6. Confirm `npm audit` reports no vulnerabilities.
 7. Confirm `npm pack --dry-run` contains only current build artifacts.
-8. Test the packed tarball in a clean temporary project.
+8. Test the packed tarball in a clean temporary project, including ACP.
 9. Verify the worktree and branch are exactly the reviewed revision.
 10. For prereleases, verify npm `latest` points to the current stable version.
 11. Show the user the evidence and exact commands that will mutate GitHub/npm.
@@ -43,6 +43,7 @@ Before proposing a release:
 ```sh
 npm run release:check
 npm run smoke:opencode
+npm run smoke:opencode:acp
 npm run test:tui:check
 ```
 
@@ -96,16 +97,21 @@ gh workflow run release.yml \
 For every candidate the workflow:
 
 1. validates exact SemVer, manifest version, release notes, branch, and clean tree;
-2. runs core, OpenCode smoke, all TUI views, audit, and package gates;
-3. installs the packed candidate and repeats the real OpenCode smoke and TUI
+2. runs core, minimum/current OpenCode smoke, ACP stdio, all TUI views, audit,
+   and package gates;
+3. installs the packed candidate, serves it from an isolated local registry,
+   and repeats the real OpenCode smoke, native resolver/cache, ACP, and TUI
    matrix before publication;
 4. stages a draft GitHub release, marking prereleases before publication;
 5. publishes with npm provenance to derived tag `next` or `latest`;
 6. verifies that the derived npm tag resolves to the exact version and stable
    `latest` remains unchanged for a prerelease;
 7. anonymously installs the exact public npm version and repeats the real
-   OpenCode smoke and every TUI view; and
-8. finalizes the GitHub prerelease or full latest release.
+   OpenCode smoke, ACP, and every TUI view;
+8. gives the exact npm spec directly to minimum and current OpenCode, verifies
+   their package resolver/cache plus chat, and repeats ACP from that resolver;
+   and
+9. finalizes the GitHub prerelease or full latest release.
 
 If npm publication fails, the workflow removes the staged draft release and
 tag. If npm succeeds but later verification fails, preserve the draft and
@@ -117,6 +123,8 @@ published package for explicit reconciliation; npm versions are immutable.
 npm view opencode-lmstudio dist-tags --json
 npm view opencode-lmstudio@<version> version dist.tarball dist.integrity --json
 gh release view "v<version>" --json tagName,isDraft,isPrerelease,url
+npm run smoke:opencode:resolver -- opencode-lmstudio@<version>
+npm run smoke:opencode:acp:package -- opencode-lmstudio@<version>
 git status --short --branch
 ```
 
