@@ -137,9 +137,13 @@ context, capped at 8,192 tokens. An explicit user limit always wins.
 
 ### Tool training and reasoning
 
-The plugin does not convert `trained_for_tool_use: false` into
-`tool_call: false`. LM Studio documents default tool use separately from native
-tool training, while OpenCode enables tools when `tool_call` is omitted.
+LM Studio documents native and default tool-use modes, and says every model has
+at least default tool support. The plugin sets `tool_call: true` for discovered
+LLMs rather than treating `trained_for_tool_use: false` as "tools unsupported."
+The structured discovery log groups models into `toolUse.native`,
+`toolUse.default`, and `toolUse.unknown`, so lower-reliability default handling
+is visible without disabling it. Runtime malformed-call detection is not
+claimed because LM Studio can return that text as ordinary assistant content.
 
 LM Studio reasoning settings are also left unmapped because OpenCode's
 `reasoning` flag is not documented as an equivalent field for the

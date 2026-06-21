@@ -1,7 +1,12 @@
 import type { PluginInput } from "@opencode-ai/plugin"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { LMStudioPlugin } from "../src/index.ts"
-import { effectiveContextLength, enhanceConfig, toModelConfig } from "../src/plugin/enhance-config.ts"
+import {
+  effectiveContextLength,
+  enhanceConfig,
+  toolUseMode,
+  toModelConfig,
+} from "../src/plugin/enhance-config.ts"
 import type { LMStudioModel, OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
 import {
   LMStudioAPIError,
@@ -163,7 +168,7 @@ describe("model mapping", () => {
     })
   })
 
-  it("maps documented vision while leaving tool training and reasoning semantically distinct", () => {
+  it("maps vision and tool support while preserving native-vs-default tool diagnostics", () => {
     const mapped = toModelConfig(model({
       key: "zai-org/glm-4.5v",
       display_name: "GLM 4.5V",
@@ -178,9 +183,12 @@ describe("model mapping", () => {
       id: "zai-org/glm-4.5v",
       name: "GLM 4.5V",
       attachment: true,
+      tool_call: true,
       modalities: { input: ["text", "image"], output: ["text"] },
     })
-    expect(mapped).not.toHaveProperty("tool_call")
+    expect(toolUseMode(model({ capabilities: { vision: false, trained_for_tool_use: true } }))).toBe("native")
+    expect(toolUseMode(model({ capabilities: { vision: false, trained_for_tool_use: false } }))).toBe("default")
+    expect(toolUseMode(model({ capabilities: undefined }))).toBe("unknown")
     expect(mapped).not.toHaveProperty("reasoning")
   })
 })
@@ -188,7 +196,11 @@ describe("model mapping", () => {
 describe("config enhancement", () => {
   it("registers Nemotron and GLM from typed records without name heuristics", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
-      model({ key: "nvidia/nemotron-3-nano-omni", display_name: "Nemotron 3 Nano Omni" }),
+      model({
+        key: "nvidia/nemotron-3-nano-omni",
+        display_name: "Nemotron 3 Nano Omni",
+        capabilities: { vision: false, trained_for_tool_use: false },
+      }),
       model({
         key: "zai-org/glm-4.5v",
         display_name: "GLM 4.5V",
@@ -199,20 +211,37 @@ describe("config enhancement", () => {
       model({ type: "future-domain", key: "future/model", display_name: "Future Model" }),
     ])))
     const value = config()
+    const log = logger()
 
-    const result = await enhanceConfig(value, logger())
+    const result = await enhanceConfig(value, log)
 
-    expect(result).toMatchObject({ discovered: 2, skippedEmbeddings: 2, skippedUnsupported: 1 })
+    expect(result).toMatchObject({
+      discovered: 2,
+      skippedEmbeddings: 2,
+      skippedUnsupported: 1,
+      toolUse: {
+        default: ["nvidia/nemotron-3-nano-omni"],
+        native: ["zai-org/glm-4.5v"],
+        unknown: [],
+      },
+    })
+    expect(log).toHaveBeenCalledWith(
+      "info",
+      "Discovered LM Studio models",
+      expect.objectContaining({ toolUse: result?.toolUse }),
+    )
     expect(value.provider?.lmstudio?.options?.baseURL).toBe("http://127.0.0.1:1234/v1")
     expect(value.provider?.lmstudio?.models).toEqual({
       "nvidia/nemotron-3-nano-omni": expect.objectContaining({
         name: "Nemotron 3 Nano Omni",
         attachment: false,
+        tool_call: true,
         modalities: { input: ["text"], output: ["text"] },
       }),
       "zai-org/glm-4.5v": expect.objectContaining({
         name: "GLM 4.5V",
         attachment: true,
+        tool_call: true,
         modalities: { input: ["text", "image"], output: ["text"] },
       }),
     })

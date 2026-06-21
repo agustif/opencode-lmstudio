@@ -22,9 +22,15 @@ export interface EnhanceConfigResult {
   readonly skippedEmbeddings: number
   readonly skippedUnsupported: number
   readonly serverURL: string
+  readonly toolUse: {
+    readonly default: readonly string[]
+    readonly native: readonly string[]
+    readonly unknown: readonly string[]
+  }
 }
 
 const MAX_OUTPUT_RESERVE = 8_192
+export type ToolUseMode = "default" | "native" | "unknown"
 interface GeneratedState {
   readonly models: Readonly<Record<string, ModelConfig>>
   readonly whitelist?: readonly string[]
@@ -42,6 +48,12 @@ export function effectiveContextLength(model: LMStudioModel): number {
     : Math.min(model.max_context_length, ...loaded)
 }
 
+/** Classify LM Studio's native-vs-default tool handling without disabling tools. */
+export function toolUseMode(model: LMStudioModel): ToolUseMode {
+  const trained = model.capabilities?.trained_for_tool_use
+  return trained === true ? "native" : trained === false ? "default" : "unknown"
+}
+
 export function toModelConfig(model: LMStudioModel & { type: "llm" }): ModelConfig {
   const vision = model.capabilities?.vision === true
   const input: Array<"text" | "image"> = vision ? ["text", "image"] : ["text"]
@@ -51,6 +63,10 @@ export function toModelConfig(model: LMStudioModel & { type: "llm" }): ModelConf
     id: model.key,
     name: model.display_name,
     attachment: vision,
+    // LM Studio supports tools for every LLM. The training flag distinguishes
+    // native handling from its lower-reliability default tool format; it does
+    // not mean that tool calls are unsupported.
+    tool_call: true,
     modalities: {
       input,
       output: ["text"],
@@ -148,6 +164,11 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
       skippedEmbeddings: response.models.filter((model) => model.type === "embedding").length,
       skippedUnsupported: response.models.filter((model) => !isGenerativeModel(model) && model.type !== "embedding").length,
       serverURL,
+      toolUse: {
+        default: generative.filter((model) => toolUseMode(model) === "default").map((model) => model.key),
+        native: generative.filter((model) => toolUseMode(model) === "native").map((model) => model.key),
+        unknown: generative.filter((model) => toolUseMode(model) === "unknown").map((model) => model.key),
+      },
     }
     await log("info", "Discovered LM Studio models", result)
     return result

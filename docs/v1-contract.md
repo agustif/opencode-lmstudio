@@ -43,6 +43,7 @@ Automatic discovery checks only LM Studio's documented default address,
 | `type: "llm"` | chat model | Include |
 | `type: "embedding"` | none | Exclude from the chat provider |
 | `capabilities.vision` | `attachment`, input modalities | Add image input only when true |
+| `capabilities.trained_for_tool_use` | `tool_call`, structured diagnostics | Keep tools enabled; report native or default handling |
 | `max_context_length` | `limit.context` | Use when no instance is loaded |
 | loaded `config.context_length` | `limit.context` | Use one active value, or the minimum for multiple instances |
 
@@ -57,11 +58,20 @@ an explicit conservative policy: one quarter of effective context, capped at
 8,192 tokens. This is plugin policy, not LM Studio metadata. Explicit user
 limits override it.
 
-`capabilities.trained_for_tool_use` reports whether a model was trained
-natively for tool use. LM Studio separately documents a default tool-use path
-for other models, and OpenCode defaults an omitted `tool_call` field to true.
-The plugin therefore does not translate a false training flag into
-`tool_call: false`.
+`capabilities.trained_for_tool_use` reports whether LM Studio uses native or
+default tool handling. LM Studio documents that every model has at least
+default tool support, although models without native training may produce
+malformed calls and results vary by model. The plugin therefore sets
+`tool_call: true` for discovered LLMs and never translates a false training
+flag into `tool_call: false`.
+
+The structured `Discovered LM Studio models` log groups model keys under
+`toolUse.native`, `toolUse.default`, and `toolUse.unknown`. This exposes the
+static quality signal without printing to ACP stdout or pretending that
+default support is unavailable. Neither LM Studio's response nor OpenCode's
+plugin hooks expose a reliable runtime event when malformed tool-call text is
+returned as ordinary assistant content, so the plugin does not guess by
+scanning model output.
 
 LM Studio's `capabilities.reasoning` describes its public reasoning settings.
 OpenCode's `reasoning` boolean controls provider behavior and is not documented
