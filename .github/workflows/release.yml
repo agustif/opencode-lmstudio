@@ -104,7 +104,8 @@ jobs:
         shell: bash
         run: |
           npm pack --json > package-preview.json
-          echo "tarball=$(node -e 'const fs=require(\"node:fs\"); const value=JSON.parse(fs.readFileSync(\"package-preview.json\", \"utf8\")); process.stdout.write(value[0].filename)')" >> "$GITHUB_OUTPUT"
+          tarball=$(node -e 'const fs=require("node:fs"); const value=JSON.parse(fs.readFileSync("package-preview.json", "utf8")); process.stdout.write(value[0].filename)')
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
 
       - name: Setup latest OpenCode for packed-candidate smoke
         uses: ./.github/actions/setup-opencode
