@@ -49,6 +49,20 @@ function waitForExit(child: ReturnType<typeof spawn>): Promise<{ code: number | 
   })
 }
 
+async function withTimeout<T>(operation: Promise<T>, name: string, timeoutMs = 60_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`OpenCode ACP ${name} timed out`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 const root = mkdtempSync(join(tmpdir(), "opencode-lmstudio-acp-"))
 const fixture = await createLMStudioFixture("acp", "acp-token")
 let child: ReturnType<typeof spawn> | undefined
@@ -140,12 +154,15 @@ try {
     ),
   )
 
-  const initialized = await connection.initialize({
+  const initialized = await withTimeout(connection.initialize({
     protocolVersion: PROTOCOL_VERSION,
     clientCapabilities: {},
-  })
+  }), "initialize")
   assert.equal(initialized.protocolVersion, PROTOCOL_VERSION)
-  const session = await connection.newSession({ cwd: root, mcpServers: [] })
+  const session = await withTimeout(
+    connection.newSession({ cwd: root, mcpServers: [] }),
+    "session/new",
+  )
   assert(session.sessionId)
 
   child.stdin.end()

@@ -210,12 +210,18 @@ jobs:
         run: npm run smoke:opencode:resolver -- --tarball "${{ steps.package.outputs.tarball }}" --expected-version "$(node -p 'require("./package.json").version')"
 
   platform-smoke:
-    name: ${{ matrix.os }} OpenCode CLI and ACP
+    name: ${{ matrix.name }}
     needs: quality
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - name: macOS OpenCode CLI and ACP
+            os: macos-latest
+            acp: true
+          - name: Windows OpenCode CLI
+            os: windows-latest
+            acp: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -247,6 +253,7 @@ jobs:
         run: npm run smoke:opencode
 
       - name: Run ACP JSON-RPC purity smoke
+        if: matrix.acp
         run: npm run smoke:opencode:acp
 
   dependency-review:

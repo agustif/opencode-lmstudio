@@ -96,6 +96,13 @@ uses SDK 0.21.0 to initialize the connection and create a session, records every
 stdout line, and rejects non-JSON-RPC output. Plugin diagnostics use
 `client.app.log`; they must not be printed to ACP stdout.
 
+ACP is a blocking Linux and macOS gate. OpenCode 1.17.9's ACP process hangs
+during the official handshake on the GitHub Windows runner even though the
+same Windows binary passes plugin installation, configuration, discovery, and
+chat. Windows ACP is therefore recorded as an upstream compatibility gap, not
+claimed as release evidence; every ACP operation has a hard timeout so CI
+cannot stall indefinitely.
+
 ## Primary evidence
 
 - [LM Studio native REST API](https://lmstudio.ai/docs/developer/rest)
