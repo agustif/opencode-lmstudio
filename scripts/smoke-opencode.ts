@@ -86,7 +86,11 @@ try {
   assert(provider)
   assert.deepEqual(Object.keys(provider.models ?? {}), [fixture.modelIDs.text, fixture.modelIDs.vision])
   assert.deepEqual(provider.whitelist, [fixture.modelIDs.text, fixture.modelIDs.vision])
-  assert.equal((provider.models?.[fixture.modelIDs.vision] as { attachment?: boolean }).attachment, true)
+  const textModel = provider.models?.[fixture.modelIDs.text] as { tool_call?: boolean }
+  const visionModel = provider.models?.[fixture.modelIDs.vision] as { attachment?: boolean; tool_call?: boolean }
+  assert.equal(textModel.tool_call, true)
+  assert.equal(visionModel.attachment, true)
+  assert.equal(visionModel.tool_call, true)
 
   const live = await run(opencode, ["run", "--model", `lmstudio/${fixture.modelIDs.text}`, "SMOKE_PROMPT"], root, env)
   assert.equal(live.code, 0, live.stderr)

@@ -110,6 +110,9 @@ try {
     fixture.modelIDs.text,
     fixture.modelIDs.vision,
   ])
+  const resolvedModels = parsed.provider?.lmstudio?.models ?? {}
+  assert.equal((resolvedModels[fixture.modelIDs.text] as { tool_call?: boolean }).tool_call, true)
+  assert.equal((resolvedModels[fixture.modelIDs.vision] as { tool_call?: boolean }).tool_call, true)
 
   const packageManifest = join(
     xdg,
