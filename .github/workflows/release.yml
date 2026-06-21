@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact package version already committed on main, without v
+        description: Exact stable or prerelease package version committed on main, without v
         required: true
         type: string
       publish:
@@ -25,7 +25,6 @@ env:
   NODE_VERSION: 24.15.0
   BUN_VERSION: 1.3.9
   VERSION: ${{ inputs.version }}
-  TAG: v${{ inputs.version }}
 
 jobs:
   release:
@@ -34,11 +33,11 @@ jobs:
     timeout-minutes: 30
     environment: release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -49,17 +48,21 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Validate release request
+        id: release
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          metadata=$(bun scripts/release-version.ts "$VERSION")
+          printf '%s\n' "$metadata" >> "$GITHUB_OUTPUT"
+          tag=$(printf '%s\n' "$metadata" | sed -n 's/^git_tag=//p')
+          test -n "$tag"
           test "${GITHUB_REF_NAME}" = main
           actual=$(node -p 'require("./package.json").version')
           test "$actual" = "$VERSION" || {
             echo "package.json is $actual, requested $VERSION" >&2
             exit 1
           }
-          test -f "docs/releases/v${VERSION}.md"
+          test -f "docs/releases/${tag}.md"
           git diff --exit-code
 
       - name: Install dependencies
@@ -100,7 +103,7 @@ jobs:
         run: npm pack --json > package-preview.json
 
       - name: Upload release evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-evidence-${{ inputs.version }}
           path: |
@@ -115,6 +118,7 @@ jobs:
         if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.git_tag }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -130,26 +134,76 @@ jobs:
         if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$TAG"
-          --target "$GITHUB_SHA"
-          --title "opencode-lmstudio $TAG"
-          --notes-file "docs/releases/v${VERSION}.md"
-          --draft
+          IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
+          TAG: ${{ steps.release.outputs.git_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            release create "$TAG"
+            --target "$GITHUB_SHA"
+            --title "opencode-lmstudio $TAG"
+            --notes-file "docs/releases/${TAG}.md"
+            --draft
+          )
+          if [[ "$IS_PRERELEASE" = true ]]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"
 
       - name: Publish npm package with provenance
         id: publish
         if: inputs.publish
-        run: npm publish --provenance --access public
+        env:
+          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
+        run: npm publish --provenance --access public --tag "$NPM_TAG"
+
+      - name: Verify published npm channel
+        if: inputs.publish
+        env:
+          IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
+          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package=$(node -p 'require("./package.json").name')
+          published=""
+          for attempt in $(seq 1 12); do
+            published=$(npm view "${package}@${NPM_TAG}" version 2>/dev/null || true)
+            [[ "$published" = "$VERSION" ]] && break
+            echo "Waiting for ${package}@${NPM_TAG} propagation (attempt ${attempt}/12)"
+            sleep 5
+          done
+          test "$published" = "$VERSION" || {
+            echo "Expected ${package}@${NPM_TAG} to resolve to $VERSION, got: $published" >&2
+            exit 1
+          }
+          if [[ "$IS_PRERELEASE" = true ]]; then
+            stable=$(npm view "${package}@latest" version)
+            test "$stable" != "$VERSION" || {
+              echo "Prerelease $VERSION must not replace npm latest" >&2
+              exit 1
+            }
+          fi
 
       - name: Finalize GitHub release
         if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$TAG" --draft=false --latest
+          IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
+          TAG: ${{ steps.release.outputs.git_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$IS_PRERELEASE" = true ]]; then
+            gh release edit "$TAG" --draft=false --prerelease
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
 
       - name: Remove staged release after npm publish failure
         if: failure() && steps.publish.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.git_tag }}
         run: gh release delete "$TAG" --yes --cleanup-tag

@@ -8,7 +8,8 @@
  * explicit reviewed release plan.
  */
 import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
+import { getReleaseVersionMetadata } from "./release-version.ts"
 
 function run(command: string, args: string[]): void {
   console.log(`\n> ${command} ${args.join(" ")}`)
@@ -18,8 +19,12 @@ function run(command: string, args: string[]): void {
 }
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { name: string; version: string }
+const release = getReleaseVersionMetadata(pkg.version)
+const releaseNotes = `docs/releases/${release.gitTag}.md`
+if (!existsSync(releaseNotes)) throw new Error(`Missing release notes: ${releaseNotes}`)
 
 console.log(`Release preflight for ${pkg.name}@${pkg.version}`)
+console.log(`Release channel: npm ${release.npmTag}; GitHub ${release.isPrerelease ? "prerelease" : "latest"}`)
 run("npm", ["run", "validate"])
 run("npm", ["run", "test:coverage"])
 run("npm", ["audit", "--audit-level=high"])

@@ -38,10 +38,13 @@ it as a discovery fallback.
 
 ## Installation
 
+Stable users should remain on `0.3.1`, which is published under npm's `latest`
+dist-tag:
+
 ```sh
-npm install opencode-lmstudio
+npm install opencode-lmstudio@latest
 # or
-bun add opencode-lmstudio
+bun add opencode-lmstudio@latest
 ```
 
 Pin a released version in `opencode.json` so OpenCode does not reuse a stale
@@ -50,9 +53,34 @@ Pin a released version in `opencode.json` so OpenCode does not reuse a stale
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-lmstudio@1.0.0"]
+  "plugin": ["opencode-lmstudio@0.3.1"]
 }
 ```
+
+### Opt into the v1 release candidate
+
+The typed discovery integration documented below is rolling out as
+`1.0.0-rc.1`. Follow the live status and report results in
+[#34](https://github.com/agustif/opencode-lmstudio/issues/34). Once the tracker
+marks the RC as published, install the moving prerelease channel with:
+
+```sh
+npm install opencode-lmstudio@next
+# or
+bun add opencode-lmstudio@next
+```
+
+For reproducible testing, pin the exact candidate in `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-lmstudio@1.0.0-rc.1"]
+}
+```
+
+The RC does not replace npm `latest`. To roll back, restore
+`opencode-lmstudio@0.3.1` and restart OpenCode.
 
 When no provider is configured, the plugin probes the historical local ports
 and creates `provider.lmstudio` only after receiving a valid LM Studio response.
@@ -65,7 +93,7 @@ servers requiring authentication:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-lmstudio@1.0.0"],
+  "plugin": ["opencode-lmstudio@1.0.0-rc.1"],
   "provider": {
     "lmstudio": {
       "npm": "@ai-sdk/openai-compatible",
