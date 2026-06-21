@@ -182,11 +182,11 @@ LM Studio fixture through Microsoft's `@microsoft/tui-test`.
 
 ![LM Studio provider models in the OpenCode model picker](./docs/screenshots/opencode-models.svg)
 
-![Filtering the OpenCode model picker to an LM Studio vision model](./docs/screenshots/opencode-model-search.svg)
-
-![OpenCode home after selecting an LM Studio vision model](./docs/screenshots/opencode-selected-model.svg)
-
 ![A streamed chat response from the LM Studio fixture](./docs/screenshots/opencode-chat.svg)
+
+The durable TUI suite also captures the
+[filtered vision-model search](./docs/screenshots/opencode-model-search.svg) and
+[selected-model home state](./docs/screenshots/opencode-selected-model.svg).
 
 Refresh the fixture and screenshots when the UI contract changes:
 
