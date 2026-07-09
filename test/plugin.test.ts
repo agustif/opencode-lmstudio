@@ -2,8 +2,15 @@ import type { PluginInput } from "@opencode-ai/plugin"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { LMStudioPlugin } from "../src/index.ts"
 import {
+  BADGE_TIERS,
+  DEFAULT_BADGE_TIER,
+  decorateModelName,
   effectiveContextLength,
   enhanceConfig,
+  formatLabel,
+  formatSize,
+  modelBadge,
+  resolveBadgeTier,
   toolUseMode,
   toModelConfig,
 } from "../src/plugin/enhance-config.ts"
@@ -181,7 +188,7 @@ describe("model mapping", () => {
 
     expect(mapped).toMatchObject({
       id: "zai-org/glm-4.5v",
-      name: "GLM 4.5V",
+      name: "GLM 4.5V (Q4_K_M · GGUF)",
       attachment: true,
       tool_call: true,
       modalities: { input: ["text", "image"], output: ["text"] },
@@ -190,6 +197,103 @@ describe("model mapping", () => {
     expect(toolUseMode(model({ capabilities: { vision: false, trained_for_tool_use: false } }))).toBe("default")
     expect(toolUseMode(model({ capabilities: undefined }))).toBe("unknown")
     expect(mapped).not.toHaveProperty("reasoning")
+  })
+
+  it("badges the display name with params, quant, size, and format", () => {
+    const full = toModelConfig(model({
+      display_name: "Devstral Small",
+      params_string: "24B",
+      quantization: { name: "Q4_K_M", bits_per_weight: 4 },
+      size_bytes: 14_300_000_000,
+      format: "mlx",
+    }) as LMStudioModel & { type: "llm" })
+    expect(full.name).toBe("Devstral Small (24B · Q4_K_M · 14.3 GB · MLX)")
+
+    // Each segment drops out cleanly when LM Studio does not report it.
+    const bare = toModelConfig(model({
+      display_name: "Devstral Small",
+      params_string: null,
+      quantization: null,
+      size_bytes: null,
+      format: null,
+    }) as LMStudioModel & { type: "llm" })
+    expect(bare.name).toBe("Devstral Small")
+
+    const partial = model({
+      display_name: "Devstral Small",
+      params_string: "7B",
+      quantization: null,
+      size_bytes: undefined,
+      format: "gguf",
+    })
+    expect(modelBadge(partial)).toBe("7B · GGUF")
+    expect(decorateModelName("Devstral Small", partial)).toBe("Devstral Small (7B · GGUF)")
+  })
+
+  it("formats size with LM Studio's decimal convention and format labels", () => {
+    expect(formatSize(14_300_000_000)).toBe("14.3 GB")
+    expect(formatSize(634_550_000)).toBe("635 MB")
+    expect(formatSize(84_110_000)).toBe("84 MB")
+    // KB tier (real models are never this small, but the branch exists).
+    expect(formatSize(512_000)).toBe("512 KB")
+    expect(formatSize(1_000)).toBe("1 KB")
+    // Unit-boundary promotion: a value that would round to "1000 <unit>"
+    // promotes to the larger unit instead of showing four digits.
+    expect(formatSize(999_999_999)).toBe("1.0 GB")
+    expect(formatSize(999_500_000)).toBe("1.0 GB")
+    expect(formatSize(999_499_999)).toBe("999 MB")
+    expect(formatSize(999_999)).toBe("1 MB")
+    expect(formatSize(999_499)).toBe("999 KB")
+    expect(formatSize(0)).toBeUndefined()
+    expect(formatSize(null)).toBeUndefined()
+    expect(formatSize(undefined)).toBeUndefined()
+    expect(formatLabel("mlx")).toBe("MLX")
+    expect(formatLabel("gguf")).toBe("GGUF")
+    expect(formatLabel(null)).toBeUndefined()
+  })
+
+  it("selects badge segments per tier as order-preserving subsets", () => {
+    const full = model({
+      display_name: "Devstral Small",
+      params_string: "24B",
+      quantization: { name: "Q4_K_M", bits_per_weight: 4 },
+      size_bytes: 14_300_000_000,
+      format: "mlx",
+    })
+
+    expect(modelBadge(full, "off")).toBeUndefined()
+    expect(modelBadge(full, "format")).toBe("MLX")
+    expect(modelBadge(full, "compact")).toBe("Q4_K_M · 14.3 GB · MLX")
+    expect(modelBadge(full, "full")).toBe("24B · Q4_K_M · 14.3 GB · MLX")
+    // Default tier is full.
+    expect(modelBadge(full)).toBe(modelBadge(full, "full"))
+    expect(DEFAULT_BADGE_TIER).toBe("full")
+    expect(BADGE_TIERS).toEqual(["off", "format", "compact", "full"])
+
+    // Segments still drop within a tier when a field is missing.
+    const noQuant = model({ display_name: "X", params_string: "24B", quantization: null, size_bytes: 14_300_000_000, format: "mlx" })
+    expect(modelBadge(noQuant, "compact")).toBe("14.3 GB · MLX")
+    // format tier with unknown format yields no badge.
+    expect(modelBadge(model({ format: null }), "format")).toBeUndefined()
+
+    // toModelConfig / decorateModelName honour the tier.
+    expect(toModelConfig(full as LMStudioModel & { type: "llm" }, "off").name).toBe("Devstral Small")
+    expect(toModelConfig(full as LMStudioModel & { type: "llm" }, "format").name).toBe("Devstral Small (MLX)")
+    expect(decorateModelName("Devstral Small", full, "compact")).toBe("Devstral Small (Q4_K_M · 14.3 GB · MLX)")
+  })
+
+  it("resolves the badge option, failing open to the default tier", () => {
+    expect(resolveBadgeTier("off")).toBe("off")
+    expect(resolveBadgeTier("format")).toBe("format")
+    expect(resolveBadgeTier("compact")).toBe("compact")
+    expect(resolveBadgeTier("full")).toBe("full")
+    // Invalid / wrong-typed values degrade to the default rather than throwing.
+    expect(resolveBadgeTier("bogus")).toBe(DEFAULT_BADGE_TIER)
+    expect(resolveBadgeTier(undefined)).toBe(DEFAULT_BADGE_TIER)
+    expect(resolveBadgeTier(null)).toBe(DEFAULT_BADGE_TIER)
+    expect(resolveBadgeTier(42)).toBe(DEFAULT_BADGE_TIER)
+    expect(resolveBadgeTier({ tier: "compact" })).toBe(DEFAULT_BADGE_TIER)
+    expect(resolveBadgeTier("")).toBe(DEFAULT_BADGE_TIER)
   })
 })
 
@@ -233,13 +337,13 @@ describe("config enhancement", () => {
     expect(value.provider?.lmstudio?.options?.baseURL).toBe("http://127.0.0.1:1234/v1")
     expect(value.provider?.lmstudio?.models).toEqual({
       "nvidia/nemotron-3-nano-omni": expect.objectContaining({
-        name: "Nemotron 3 Nano Omni",
+        name: "Nemotron 3 Nano Omni (Q4_K_M · GGUF)",
         attachment: false,
         tool_call: true,
         modalities: { input: ["text"], output: ["text"] },
       }),
       "zai-org/glm-4.5v": expect.objectContaining({
-        name: "GLM 4.5V",
+        name: "GLM 4.5V (Q4_K_M · GGUF)",
         attachment: true,
         tool_call: true,
         modalities: { input: ["text", "image"], output: ["text"] },
@@ -310,6 +414,42 @@ describe("config enhancement", () => {
       "https://models.example.test/api/v1/models",
       expect.objectContaining({ headers: { Authorization: "Bearer secret" } }),
     )
+  })
+
+  it("honours options.badge tiers and preserves the option idempotently", async () => {
+    const badged = model({
+      key: "publisher/model",
+      display_name: "Devstral Small",
+      params_string: "24B",
+      size_bytes: 14_300_000_000,
+      quantization: { name: "Q4_K_M", bits_per_weight: 4 },
+      format: "mlx",
+    })
+
+    // "off" → bare display name.
+    const off = config({ provider: { lmstudio: { options: { baseURL: "http://127.0.0.1:1234/v1", badge: "off" } } } })
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([badged])))
+    await enhanceConfig(off, logger())
+    expect(off.provider?.lmstudio?.models?.["publisher/model"]?.name).toBe("Devstral Small")
+
+    // "compact" drops params; runs twice to prove the option is not stripped
+    // (options is the persistent store, so a strip would revert to full on
+    // the second config load).
+    const compact = config({ provider: { lmstudio: { options: { baseURL: "http://127.0.0.1:1234/v1", badge: "compact" } } } })
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([badged])))
+    await enhanceConfig(compact, logger())
+    await enhanceConfig(compact, logger())
+    expect(compact.provider?.lmstudio?.options?.badge).toBe("compact")
+    expect(compact.provider?.lmstudio?.options?.baseURL).toBe("http://127.0.0.1:1234/v1")
+    expect(compact.provider?.lmstudio?.models?.["publisher/model"]?.name)
+      .toBe("Devstral Small (Q4_K_M · 14.3 GB · MLX)")
+
+    // Invalid value degrades to the default (full) instead of breaking startup.
+    const bogus = config({ provider: { lmstudio: { options: { baseURL: "http://127.0.0.1:1234/v1", badge: "nope" } } } })
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([badged])))
+    await enhanceConfig(bogus, logger())
+    expect(bogus.provider?.lmstudio?.models?.["publisher/model"]?.name)
+      .toBe("Devstral Small (24B · Q4_K_M · 14.3 GB · MLX)")
   })
 
   it("preserves an explicitly empty whitelist", async () => {

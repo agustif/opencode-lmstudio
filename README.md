@@ -19,7 +19,8 @@ At startup, the plugin:
    `http://127.0.0.1:1234`;
 2. validates `GET /api/v1/models` against the native LM Studio response shape;
 3. adds `llm` records to OpenCode and excludes embedding records;
-4. maps the model key, display name, vision support, and effective context;
+4. maps the model key, a metadata-badged display name (params, quant, size,
+   format), vision support, and effective context;
 5. uses the active loaded context when present and the model maximum when the
    model is available for on-demand loading;
 6. uses the provider's server and Bearer-token boundary for discovery; and
@@ -122,6 +123,50 @@ support. Records with `type: "embedding"` do not enter the chat provider.
 The plugin preserves the LM Studio `key` as the model ID and uses
 `display_name` as the OpenCode display name. There are no model-family or
 model-name heuristics.
+
+### Metadata badge
+
+The plugin appends a compact badge to the display name so otherwise-identical
+builds are distinguishable in the OpenCode model picker:
+
+```
+Devstral Small (24B · Q4_K_M · 14.3 GB · MLX)
+```
+
+The badge is drawn from the native record's `params_string`,
+`quantization.name`, `size_bytes`, and `format`. Each segment is dropped when LM
+Studio does not report it, so the badge degrades cleanly on older servers, and a
+record with no metadata keeps the bare `display_name`. Size uses LM Studio's
+decimal (base 1000) convention. Only the display name changes; the model `key`
+(ID) is untouched.
+
+#### Verbosity — `options.badge`
+
+Set `provider.lmstudio.options.badge` to dial the badge up or down. Default is
+`full`, so the badge is on unless you turn it down:
+
+| Tier      | Example                                       |
+|-----------|-----------------------------------------------|
+| `off`     | `Devstral Small`                              |
+| `format`  | `Devstral Small (MLX)`                        |
+| `compact` | `Devstral Small (Q4_K_M · 14.3 GB · MLX)`     |
+| `full`    | `Devstral Small (24B · Q4_K_M · 14.3 GB · MLX)` |
+
+```json
+{
+  "provider": {
+    "lmstudio": {
+      "options": { "badge": "compact" }
+    }
+  }
+}
+```
+
+`compact` omits the parameter count because it is identical across the quant and
+format builds of one model, so it never disambiguates them — the tier keeps only
+the segments that do. An unrecognised value falls back to `full` rather than
+failing startup. The `badge` key is read by the plugin and does not affect the
+underlying OpenAI-compatible request.
 
 ### Context limits
 

@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Metadata badge on the model display name: a
+  `params · quant · size · format` suffix (e.g.
+  `Devstral Small (24B · Q4_K_M · 14.3 GB · MLX)`) drawn from the native
+  record's `params_string`, `quantization.name`, `size_bytes`, and `format`, so
+  otherwise-identical builds are distinguishable in the OpenCode model picker.
+  Each segment is dropped when LM Studio does not report it; a record with no
+  metadata keeps the bare `display_name`. The model `key` (ID) is unchanged.
+- Configurable badge verbosity via `provider.lmstudio.options.badge`:
+  `off` | `format` | `compact` | `full` (default `full`, so existing behaviour
+  is unchanged). `compact` omits the parameter count, which never disambiguates
+  builds of the same model. An unrecognised value falls back to `full`.
+- `params_string` and `size_bytes` added to the native `GET /api/v1/models`
+  schema (both optional for backward compatibility).
+
 ## [1.0.0-rc.2] - 2026-06-21
 
 ### Added
