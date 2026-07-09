@@ -39,13 +39,22 @@ Automatic discovery checks only LM Studio's documented default address,
 | LM Studio native v1 field | OpenCode field | Policy |
 | --- | --- | --- |
 | `key` | model map key and `id` | Preserve exactly |
-| `display_name` | `name` | Use the server's display name |
+| `display_name` | `name` | Server display name plus a metadata badge (see below) |
+| `params_string`, `quantization.name`, `size_bytes`, `format` | `name` badge | Append `(params · quant · size · format)`; verbosity via `options.badge`, default `full` |
 | `type: "llm"` | chat model | Include |
 | `type: "embedding"` | none | Exclude from the chat provider |
 | `capabilities.vision` | `attachment`, input modalities | Add image input only when true |
 | `capabilities.trained_for_tool_use` | `tool_call`, structured diagnostics | Keep tools enabled; report native or default handling |
 | `max_context_length` | `limit.context` | Use when no instance is loaded |
 | loaded `config.context_length` | `limit.context` | Use one active value, or the minimum for multiple instances |
+
+The `name` is the server's `display_name` with a metadata badge appended so
+otherwise-identical builds are distinguishable. `options.badge` selects the
+verbosity: `off` (bare name), `format` (`MLX`/`GGUF`), `compact`
+(`quant · size · format`), or `full` (default; adds `params`). Unrecognised
+values fall back to `full`. The `key`/`id` is never modified. The `badge` key is
+plugin-only; `@ai-sdk/openai-compatible` ignores it, and it is retained in the
+forwarded options so the tier survives repeated config-hook runs.
 
 The active context is also capped by `max_context_length`. A model key can
 refer to more than one loaded instance, while OpenCode has one limit per model

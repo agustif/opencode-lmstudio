@@ -33,6 +33,11 @@ export const LMStudioModelSchema = z.looseObject({
   loaded_instances: z.array(LMStudioLoadedInstanceSchema),
   max_context_length: z.number().int().positive(),
   format: z.enum(["gguf", "mlx"]).nullable(),
+  // Human-readable parameter count ("7B", "27B") and on-disk size in bytes.
+  // Present on LM Studio 0.4.0+ native records; optional so older servers and
+  // captured fixtures without them still validate.
+  params_string: z.string().nullable().optional(),
+  size_bytes: z.number().nonnegative().nullable().optional(),
   capabilities: LMStudioCapabilitiesSchema.optional(),
 })
 
