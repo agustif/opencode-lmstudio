@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { probeAtlas } from "../../src/probes/atlas";
+import { probeActualyze } from "../../src/probes/actualyze";
 import type { OpenAIModelEntry } from "../../src/probes/types";
 
 function listedModel(id: string): OpenAIModelEntry {
@@ -49,43 +49,51 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("probeAtlas", () => {
-  it("auto mode requests each unique Atlas-owned safe ID and no others", async () => {
-    const encodedId = "atlas/model:latest";
+describe("probeActualyze", () => {
+  it("auto mode requests each unique Actualyze-owned safe ID and no others", async () => {
+    const encodedId = "actualyze/model:latest";
     mockFetch.mockImplementation(async (url: string) => {
       const id = decodeURIComponent(url.split("/").at(-1) ?? "");
       return { ok: true, json: async () => detail(id) };
     });
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      probeSelection: "auto",
-      modelsResponse: [
-        listedModel(encodedId),
-        listedModel(encodedId),
-        listedModelWithOwner("foreign", "vllm"),
-        listedModelWithOwner("ownerless", undefined),
-        listedModelWithOwner("Atlas-case", "Atlas"),
-        listedModel("."),
-      ],
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        probeSelection: "auto",
+        modelsResponse: [
+          listedModel(encodedId),
+          listedModel(encodedId),
+          listedModelWithOwner("foreign", "vllm"),
+          listedModelWithOwner("ownerless", undefined),
+          listedModelWithOwner("Atlas-case", "Atlas"),
+          listedModel("."),
+        ],
+      },
+    );
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://atlas.test/openai/v1/models/atlas%2Fmodel%3Alatest",
+      "https://actualyze.test/openai/v1/models/actualyze%2Fmodel%3Alatest",
       expect.any(Object),
     );
     expect(Object.keys(result.models)).toEqual([encodedId]);
   });
 
-  it("auto mode returns empty before requests when no entry is Atlas-owned", async () => {
-    const result = await probeAtlas("https://atlas.test/openai", "secret", {
-      probeSelection: "auto",
-      modelsResponse: [
-        listedModelWithOwner("foreign", "vllm"),
-        listedModelWithOwner("ownerless", undefined),
-        listedModelWithOwner("padded", "atlas "),
-      ],
-    });
+  it("auto mode returns empty before requests when no entry is Actualyze-owned", async () => {
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      "secret",
+      {
+        probeSelection: "auto",
+        modelsResponse: [
+          listedModelWithOwner("foreign", "vllm"),
+          listedModelWithOwner("ownerless", undefined),
+          listedModelWithOwner("padded", "atlas "),
+        ],
+      },
+    );
 
     expect(result).toEqual({ models: {} });
     expect(mockFetch).not.toHaveBeenCalled();
@@ -99,13 +107,17 @@ describe("probeAtlas", () => {
         return { ok: true, json: async () => detail(id) };
       });
 
-      const result = await probeAtlas("https://atlas.test/openai", undefined, {
-        probeSelection,
-        modelsResponse: [
-          listedModelWithOwner("foreign", "vllm"),
-          listedModelWithOwner("ownerless", undefined),
-        ],
-      });
+      const result = await probeActualyze(
+        "https://actualyze.test/openai",
+        undefined,
+        {
+          probeSelection,
+          modelsResponse: [
+            listedModelWithOwner("foreign", "vllm"),
+            listedModelWithOwner("ownerless", undefined),
+          ],
+        },
+      );
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(Object.keys(result.models).sort()).toEqual([
@@ -115,7 +127,7 @@ describe("probeAtlas", () => {
     },
   );
 
-  it("isolates failed and rate-limited Atlas details from a successful sibling", async () => {
+  it("isolates failed and rate-limited Actualyze details from a successful sibling", async () => {
     mockFetch.mockImplementation(async (url: string) => {
       const id = decodeURIComponent(url.split("/").at(-1) ?? "");
       if (id === "failed") throw new Error("ECONNRESET");
@@ -123,33 +135,41 @@ describe("probeAtlas", () => {
       return { ok: true, json: async () => detail(id) };
     });
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      probeSelection: "auto",
-      modelsResponse: [
-        listedModel("good"),
-        listedModel("failed"),
-        listedModel("limited"),
-      ],
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        probeSelection: "auto",
+        modelsResponse: [
+          listedModel("good"),
+          listedModel("failed"),
+          listedModel("limited"),
+        ],
+      },
+    );
 
     expect(result.models).toEqual({
       good: expect.objectContaining({ context: 131_072 }),
     });
   });
 
-  it("maps full Atlas metadata and sends auth to the encoded detail URL", async () => {
+  it("maps full Actualyze metadata and sends auth to the encoded detail URL", async () => {
     const id = "org/model:latest";
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => detail(id),
     });
 
-    const result = await probeAtlas("https://atlas.test/openai", "secret", {
-      modelsResponse: [listedModel(id)],
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      "secret",
+      {
+        modelsResponse: [listedModel(id)],
+      },
+    );
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://atlas.test/openai/v1/models/org%2Fmodel%3Alatest",
+      "https://actualyze.test/openai/v1/models/org%2Fmodel%3Alatest",
       expect.objectContaining({
         headers: { Authorization: "Bearer secret" },
       }),
@@ -225,9 +245,13 @@ describe("probeAtlas", () => {
         responses[decodeURIComponent(url.split("/").at(-1) ?? "")],
     }));
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: ids.map(listedModel),
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: ids.map(listedModel),
+      },
+    );
 
     expect(result.models.null).toEqual({
       modelType: "llm",
@@ -279,9 +303,13 @@ describe("probeAtlas", () => {
         responses[decodeURIComponent(url.split("/").at(-1) ?? "")],
     }));
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: ids.map(listedModel),
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: ids.map(listedModel),
+      },
+    );
 
     expect(result.models).toEqual({
       good: {
@@ -301,12 +329,12 @@ describe("probeAtlas", () => {
       json: async () => detail("model"),
     });
 
-    await probeAtlas("https://atlas.test/openai", undefined, {
+    await probeActualyze("https://actualyze.test/openai", undefined, {
       modelsResponse: [listedModel("model")],
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://atlas.test/openai/v1/models/model",
+      "https://actualyze.test/openai/v1/models/model",
       expect.objectContaining({ headers: {} }),
     );
   });
@@ -317,18 +345,26 @@ describe("probeAtlas", () => {
       json: async () => detail("duplicate"),
     });
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: [listedModel("duplicate"), listedModel("duplicate")],
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: [listedModel("duplicate"), listedModel("duplicate")],
+      },
+    );
 
     expect(Object.keys(result.models)).toEqual(["duplicate"]);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("rejects dot-segment model IDs before constructing URLs", async () => {
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: [listedModel("."), listedModel("..")],
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: [listedModel("."), listedModel("..")],
+      },
+    );
 
     expect(result).toEqual({ models: {} });
     expect(mockFetch).not.toHaveBeenCalled();
@@ -341,13 +377,17 @@ describe("probeAtlas", () => {
       json: async () => detail(validId),
     });
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: [listedModel("\ud800"), listedModel(validId)],
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: [listedModel("\ud800"), listedModel(validId)],
+      },
+    );
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://atlas.test/openai/v1/models/valid-model",
+      "https://actualyze.test/openai/v1/models/valid-model",
       expect.any(Object),
     );
     expect(Object.keys(result.models)).toEqual([validId]);
@@ -371,10 +411,14 @@ describe("probeAtlas", () => {
       return { ok: true, json: async () => detail(id) };
     });
 
-    const resultPromise = probeAtlas("https://atlas.test/openai", undefined, {
-      probeSelection: "auto",
-      modelsResponse: ids.map(listedModel),
-    });
+    const resultPromise = probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        probeSelection: "auto",
+        modelsResponse: ids.map(listedModel),
+      },
+    );
     await vi.waitFor(() => expect(active).toBe(8));
     release?.();
     const result = await resultPromise;
@@ -403,11 +447,15 @@ describe("probeAtlas", () => {
         }),
     );
 
-    const resultPromise = probeAtlas("https://atlas.test/openai", undefined, {
-      probeSelection: "auto",
-      modelsResponse: ids.map(listedModel),
-      signal: controller.signal,
-    });
+    const resultPromise = probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        probeSelection: "auto",
+        modelsResponse: ids.map(listedModel),
+        signal: controller.signal,
+      },
+    );
     await vi.waitFor(() => expect(started).toBe(8));
     controller.abort();
 
@@ -423,9 +471,13 @@ describe("probeAtlas", () => {
       return { ok: true, json: async () => detail(id) };
     });
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: ids.map(listedModel),
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: ids.map(listedModel),
+      },
+    );
 
     expect(Object.hasOwn(result.models, "constructor")).toBe(true);
     expect(Object.hasOwn(result.models, "__proto__")).toBe(true);
@@ -447,9 +499,13 @@ describe("probeAtlas", () => {
         }),
     });
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: [listedModel("adaptive")],
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: [listedModel("adaptive")],
+      },
+    );
 
     expect(result.models.adaptive).toEqual({
       modelType: "llm",
@@ -462,11 +518,13 @@ describe("probeAtlas", () => {
   });
 
   it("returns empty without making requests when model context is absent or empty", async () => {
-    await expect(probeAtlas("https://atlas.test/openai")).resolves.toEqual({
+    await expect(
+      probeActualyze("https://actualyze.test/openai"),
+    ).resolves.toEqual({
       models: {},
     });
     await expect(
-      probeAtlas("https://atlas.test/openai", undefined, {
+      probeActualyze("https://actualyze.test/openai", undefined, {
         modelsResponse: [],
       }),
     ).resolves.toEqual({ models: {} });
@@ -499,9 +557,13 @@ describe("probeAtlas", () => {
       return { ok: true, json: async () => detail(id) };
     });
 
-    const resultPromise = probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: ids.map(listedModel),
-    });
+    const resultPromise = probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: ids.map(listedModel),
+      },
+    );
     await vi.advanceTimersByTimeAsync(2_000);
     const result = await resultPromise;
 
@@ -521,9 +583,13 @@ describe("probeAtlas", () => {
   it("returns empty when every detail request fails", async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 500 });
 
-    const result = await probeAtlas("https://atlas.test/openai", undefined, {
-      modelsResponse: [listedModel("a"), listedModel("b")],
-    });
+    const result = await probeActualyze(
+      "https://actualyze.test/openai",
+      undefined,
+      {
+        modelsResponse: [listedModel("a"), listedModel("b")],
+      },
+    );
 
     expect(result).toEqual({ models: {} });
   });

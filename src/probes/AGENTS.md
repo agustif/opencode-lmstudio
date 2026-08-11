@@ -12,15 +12,15 @@
 - `probeFetch()` returns `Response | undefined`. It does NOT check `res.ok` — callers split: `if (!res) return EMPTY_RESULT; if (!res.ok) return EMPTY_RESULT;` then read via `readJson()`.
 - `buildHeaders()` does NOT include Content-Type. Add locally when needed (e.g., Ollama POST needs `Content-Type: application/json`, but GET does not).
 - `ProbeContext.signal` carries the config-hook abort signal. New probes and
-  probes that add external I/O should pass it to `probeFetch`. Atlas does this;
+  probes that add external I/O should pass it to `probeFetch`. Actualyze does this;
   legacy probes still rely on `probeFetch` and body-read timeouts.
 - Outer try-catch must stay even after switching to `probeFetch` — parsing can still throw on malformed bodies.
 
 ## Server Quirks
 
 - `owned_by` is optional (`owned_by?: string`). Some servers omit it entirely. Missing is not a positive signal for any server.
-- Atlas is the Tier 1 mixed-catalog exception: any exact `owned_by: "atlas"`
-  selects Atlas. Auto mode details only that owner subset; explicit Atlas mode
+- Actualyze is the Tier 1 mixed-catalog exception: any exact `owned_by: "atlas"`
+  selects Actualyze. Auto mode details only that owner subset; explicit Actualyze mode
   retains all-safe-ID behavior. Keep the fingerprint and probe predicates
   identical and case-sensitive.
 - KoboldCpp `jinja: true` does NOT mean tool calling support. Do not infer `toolCall` from Jinja.
@@ -29,8 +29,8 @@
 ## Fingerprinting
 
 - Tier 1 (modelsResponse inspection) makes zero HTTP calls and has no timer.
-- Non-Atlas `owned_by` fingerprints require unanimous ownership. Check the
-  exact Atlas exception before that rule and before llama.cpp field detection.
+- Non-Actualyze `owned_by` fingerprints require unanimous ownership. Check the
+  exact Actualyze exception before that rule and before llama.cpp field detection.
 - The `globalTimeout` timer is created after Tier 1. Early returns from Tier 1 never create it — no leak.
 - `combinedSignal` composes the caller's abort signal with the fingerprint's own controller. Built once, reused across Tier 2/3 probes.
 - Abort checks (`if (combinedSignal.aborted) return undefined`) are placed between each Tier 2/3 step for fast exit.

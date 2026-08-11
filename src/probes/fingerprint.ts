@@ -3,7 +3,7 @@ import type { ProbeKey } from "./index";
 import { buildHeaders, probeFetch, readBody, readJson } from "./util";
 
 export type DetectedServer =
-  | "atlas"
+  | "actualyze"
   | "ollama"
   | "llamacpp"
   | "omlx"
@@ -14,7 +14,7 @@ export type DetectedServer =
   | "koboldcpp";
 
 export const PROBE_MAP: Record<DetectedServer, ProbeKey> = {
-  atlas: "atlas",
+  actualyze: "actualyze",
   ollama: "ollama",
   llamacpp: "ollama",
   omlx: "omlx",
@@ -27,7 +27,7 @@ export const PROBE_MAP: Record<DetectedServer, ProbeKey> = {
 
 /** owned_by values that uniquely identify a server. */
 const OWNED_BY_MAP: Record<string, DetectedServer> = {
-  atlas: "atlas",
+  atlas: "actualyze", // wire identity the Actualyze gateway reports
   omlx: "omlx",
   vllm: "vllm",
   sglang: "sglang",
@@ -66,9 +66,9 @@ export async function fingerprint(
           .filter((owner): owner is string => typeof owner === "string"),
       );
 
-      // Atlas is authoritative per entry and may appear in mixed catalogs.
+      // Actualyze (wire value `owned_by: "atlas"`) is authoritative per entry and may appear in mixed catalogs.
       if (ownedByValues.has("atlas")) {
-        return "atlas";
+        return "actualyze";
       }
 
       // Only use ownership when every model reports the same string owner.

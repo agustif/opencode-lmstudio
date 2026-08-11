@@ -66,23 +66,23 @@ describe("fingerprint", () => {
   it("should detect atlas from owned_by", async () => {
     const models = [makeModel({ owned_by: "atlas" })];
     const result = await fingerprint(
-      "https://atlas.test/openai",
+      "https://actualyze.test/openai",
       undefined,
       models,
     );
-    expect(result).toBe("atlas");
+    expect(result).toBe("actualyze");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("should detect Atlas in a mixed catalog without Tier 2 requests", async () => {
+  it("should detect Actualyze in a mixed catalog without Tier 2 requests", async () => {
     const models = [
       makeModel({ id: "atlas-model", owned_by: "atlas" }),
       makeModel({ id: "foreign-model", owned_by: "vllm" }),
     ];
 
     await expect(
-      fingerprint("https://atlas.test/openai", undefined, models),
-    ).resolves.toBe("atlas");
+      fingerprint("https://actualyze.test/openai", undefined, models),
+    ).resolves.toBe("actualyze");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -215,37 +215,41 @@ describe("fingerprint", () => {
     expect(result).toBeUndefined();
   });
 
-  it("should detect Atlas when another model has no owner", async () => {
+  it("should detect Actualyze when another model has no owner", async () => {
     const models = [
       makeModel({ id: "model-a", owned_by: "atlas" }),
       makeModel({ id: "model-b", owned_by: undefined }),
     ];
-    const result = await fingerprint("https://atlas.test", undefined, models);
+    const result = await fingerprint(
+      "https://actualyze.test",
+      undefined,
+      models,
+    );
 
-    expect(result).toBe("atlas");
+    expect(result).toBe("actualyze");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("should require exact Atlas owner case and whitespace", async () => {
+  it("should require exact Actualyze owner case and whitespace", async () => {
     mockAllEndpoints404();
 
     for (const ownedBy of ["Atlas", " atlas", "atlas ", "ATLAS"]) {
-      const result = await fingerprint("https://atlas.test", undefined, [
+      const result = await fingerprint("https://actualyze.test", undefined, [
         makeModel({ owned_by: ownedBy }),
       ]);
       expect(result).toBeUndefined();
     }
   });
 
-  it("should prefer Atlas over llama.cpp fields on a foreign entry", async () => {
+  it("should prefer Actualyze over llama.cpp fields on a foreign entry", async () => {
     const models = [
       makeModel({ id: "atlas-model", owned_by: "atlas" }),
       makeModel({ id: "foreign-model", owned_by: "foreign", tags: ["tag"] }),
     ];
 
     await expect(
-      fingerprint("https://atlas.test", undefined, models),
-    ).resolves.toBe("atlas");
+      fingerprint("https://actualyze.test", undefined, models),
+    ).resolves.toBe("actualyze");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -253,7 +257,7 @@ describe("fingerprint", () => {
     mockAllEndpoints404();
 
     for (const ownedBy of ["constructor", "__proto__"]) {
-      const result = await fingerprint("https://atlas.test", undefined, [
+      const result = await fingerprint("https://actualyze.test", undefined, [
         makeModel({ owned_by: ownedBy }),
       ]);
       expect(result).toBeUndefined();
@@ -401,7 +405,7 @@ describe("fingerprint", () => {
   });
 
   it("should map detected server to correct probe", () => {
-    expect(PROBE_MAP["atlas"]).toBe("atlas");
+    expect(PROBE_MAP["actualyze"]).toBe("actualyze");
     expect(PROBE_MAP["llamacpp"]).toBe("ollama");
     expect(PROBE_MAP["ollama"]).toBe("ollama");
     expect(PROBE_MAP["omlx"]).toBe("omlx");

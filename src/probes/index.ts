@@ -6,7 +6,7 @@ import { probeTgi } from "./tgi";
 import { probeSglang } from "./sglang";
 import { probeLmstudio } from "./lmstudio";
 import { probeKoboldcpp } from "./koboldcpp";
-import { probeAtlas } from "./atlas";
+import { probeActualyze } from "./actualyze";
 import { fingerprint, PROBE_MAP } from "./fingerprint";
 import type { DetectedServer } from "./fingerprint";
 
@@ -34,7 +34,7 @@ import type { DetectedServer } from "./fingerprint";
  * top-level fields, while `options` uses `.catchall(z.any())`.
  */
 const PROBES = {
-  atlas: probeAtlas,
+  actualyze: probeActualyze,
   omlx: probeOmlx,
   ollama: probeOllama,
   vllm: probeVllm,
