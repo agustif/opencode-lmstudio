@@ -58,7 +58,7 @@ export interface ProviderGroup {
 const OPENAI_COMPATIBLE_NPM = "@ai-sdk/openai-compatible";
 
 /**
- * Decide whether a provider is one Model Scout actually discovers.
+ * Decide whether a provider is one Actualyze actually discovers.
  *
  * Mirrors the server's *effective* discovery predicate (`discover.ts`), which
  * is two-stage: `canDiscover` returns true when the provider uses the

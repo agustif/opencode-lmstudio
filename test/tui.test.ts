@@ -180,12 +180,12 @@ describe("tui command registration", () => {
     expect(mock.api.command?.register).toHaveBeenCalledTimes(1);
   });
 
-  it("registers a single /modelscout slash command", () => {
+  it("registers a single /actualyze slash command", () => {
     const cmds = mock.registered[0]?.() ?? [];
     expect(cmds).toHaveLength(1);
     const show = mock.commandBySlash(COMMAND_NAME);
     expect(show).toBeDefined();
-    expect(show?.title).toBe("Model Scout");
+    expect(show?.title).toBe("Actualyze");
     expect(show?.value).toBe(`${COMMAND_NAME}.show`);
   });
 
@@ -194,7 +194,7 @@ describe("tui command registration", () => {
     expect(mock.onDispose).toHaveBeenCalledWith(mock.dispose);
   });
 
-  it("opens the dialog (replace + xlarge) when /modelscout is selected", async () => {
+  it("opens the dialog (replace + xlarge) when /actualyze is selected", async () => {
     void mock.commandBySlash(COMMAND_NAME)?.onSelect?.();
     expect(
       await waitUntil(() => mock.dialog.replace.mock.calls.length > 0),
@@ -258,7 +258,7 @@ describe("tui command registration", () => {
     expect(() => mock.commandBySlash(COMMAND_NAME)?.onSelect?.()).not.toThrow();
     expect(await waitUntil(() => mock.toast.mock.calls.length > 0)).toBe(true);
     expect(mock.toast).toHaveBeenCalledWith(
-      expect.objectContaining({ variant: "error", title: "Model Scout" }),
+      expect.objectContaining({ variant: "error", title: "Actualyze" }),
     );
   });
 });
@@ -287,7 +287,7 @@ describe("tui graceful degradation", () => {
     void mock.commandBySlash(COMMAND_NAME)?.onSelect?.();
     expect(await waitUntil(() => mock.toast.mock.calls.length > 0)).toBe(true);
     expect(mock.toast).toHaveBeenCalledWith(
-      expect.objectContaining({ variant: "error", title: "Model Scout" }),
+      expect.objectContaining({ variant: "error", title: "Actualyze" }),
     );
     vi.doUnmock("@opentui/solid");
     vi.resetModules();

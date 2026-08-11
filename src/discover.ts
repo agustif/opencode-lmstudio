@@ -205,7 +205,7 @@ function applyProbeMeta(
   if (meta.temperature !== undefined) model.temperature = meta.temperature;
   if (meta.family && !model.family) model.family = meta.family;
 
-  // Probe-specific metadata (for display in /modelscout)
+  // Probe-specific metadata (for display in /actualyze)
   if (meta.parameterSize) model.parameterSize = meta.parameterSize;
   if (meta.quantization) model.quantization = meta.quantization;
   if (isFiniteNumber(meta.sizeBytes)) model.sizeBytes = meta.sizeBytes;
@@ -397,7 +397,7 @@ export async function discoverModels(
           providerConfig.models = { ...existingModels, ...discoveredModels };
         }
 
-        // Record discovery results (including skipped models for /modelscout)
+        // Record discovery results (including skipped models for /actualyze)
         if (Object.keys(discoveredModels).length > 0 || skippedIds.length > 0) {
           discoveryStore.push({
             provider: providerName,

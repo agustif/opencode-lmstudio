@@ -162,7 +162,7 @@ function buildContent(element: ElementBuilder, api: TuiPluginApi): Renderable {
   const header = element(
     "box",
     { flexShrink: 0, paddingBottom: 1 },
-    element("text", { fg: theme.text, content: "Model Scout" }),
+    element("text", { fg: theme.text, content: "Actualyze" }),
   );
 
   const content = errorMessage
@@ -204,14 +204,14 @@ function buildContent(element: ElementBuilder, api: TuiPluginApi): Renderable {
 function showError(api: TuiPluginApi, err: unknown): void {
   try {
     const message = err instanceof Error ? err.message : String(err);
-    api.ui.toast({ variant: "error", title: "Model Scout", message });
+    api.ui.toast({ variant: "error", title: "Actualyze", message });
   } catch {
     // Even the toast failed — swallow rather than escape.
   }
 }
 
 /**
- * Open the Model Scout dialog. The host dialog stack supplies the surrounding
+ * Open the Actualyze dialog. The host dialog stack supplies the surrounding
  * `Dialog` chrome (backdrop, sizing, esc handling) for whatever `replace`
  * returns, so we return the content box directly. Lazily loads the @opentui
  * reconciler; any failure surfaces as a toast and never escapes the runner.
@@ -250,9 +250,9 @@ function openDialog(api: TuiPluginApi): void {
 function buildCommands(api: TuiPluginApi): TuiCommand[] {
   return [
     {
-      title: "Model Scout",
+      title: "Actualyze",
       value: `${COMMAND_NAME}.show`,
-      category: "Model Scout",
+      category: "Actualyze",
       description: "Show discovered models with metadata",
       slash: { name: SHOW_SLASH },
       onSelect: (_dialog?: TuiDialogStack) => {
