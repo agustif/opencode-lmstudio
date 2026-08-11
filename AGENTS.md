@@ -6,7 +6,7 @@ opencode plugin: auto-discovers models from OpenAI-compatible providers, enriche
 
 ```
 src/index.ts       → Server plugin entry, config hook with AbortSignal.timeout(5s)
-src/tui.ts         → TUI plugin entry (TuiPluginModule): /modelscout slash command + dialog
+src/tui.ts         → TUI plugin entry (TuiPluginModule): /actualyze slash command + dialog
 src/tui-models.ts  → TUI data layer: SDK provider/model → display rows (collectModelGroups)
 src/discover.ts    → Pipeline orchestrator, per-provider isolation, DiscoverySnapshot table formatter
 src/models-dev.ts  → models.dev fallback (reads XDG cache file directly)
@@ -28,7 +28,7 @@ import.
 
 ## Non-obvious Constraints
 
-- **Server vs TUI plugin config split**: opencode loads **server** plugins (`./server`) from the `plugin` array in `opencode.json`, but **TUI** plugins (`./tui`) from a _separate_ `plugin` array in `tui.json`. Listing the package only in `opencode.json` runs discovery but the `/modelscout` command never appears. `opencode plugin …` patches both files; manual installs must add both.
+- **Server vs TUI plugin config split**: opencode loads **server** plugins (`./server`) from the `plugin` array in `opencode.json`, but **TUI** plugins (`./tui`) from a _separate_ `plugin` array in `tui.json`. Listing the package only in `opencode.json` runs discovery but the `/actualyze` command never appears. `opencode plugin …` patches both files; manual installs must add both.
 - **Shipped runtime uses `api.command.register`, not `api.keymap.registerLayer`**: 1.17.7 only surfaces third-party plugin slash commands via the (deprecated-typed but wired) `api.command.register(cb)` with `{ slash: { name }, onSelect }`. `api.keymap.registerLayer` exists in the types but is not wired for external plugins (see issues #10262/#5305).
 - **TUI dialog layout**: `api.ui.dialog.replace(render)` content is wrapped by the host's centered, fixed-width `Dialog` panel. Return a _content-sized_ box (no `flexGrow`/`minHeight`) or it bleeds off-center; bound the scroll area with `maxHeight` from `api.renderer.terminalHeight`. `replace()` resets size to `"medium"`, so call `setSize("xlarge")` _after_ `replace`. Omit the stack entry `onClose` (the host pops the stack on esc; calling `clear()` from `onClose` recurses).
 - **Config hook deadlock**: `client.provider.list()` cannot be called during the config hook — it routes through opencode's in-process Hono server to `Provider.list()` which depends on `InstanceState` that blocks on config hook completion. Circular dependency. Read `$XDG_CACHE_HOME/opencode/models.json` directly instead (see `src/models-dev.ts`).

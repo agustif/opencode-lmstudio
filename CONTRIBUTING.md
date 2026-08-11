@@ -1,4 +1,4 @@
-# Contributing to opencode-model-scout
+# Contributing to opencode-actualyze
 
 ## Architecture Overview
 
@@ -9,7 +9,7 @@ at startup. The source files are organized into four concerns:
 src/
 ├── constants.ts          # Plugin name, command name
 ├── index.ts              # Server plugin entry — config-hook discovery
-├── tui.ts                # TUI plugin entry — /modelscout dialog command
+├── tui.ts                # TUI plugin entry — /actualyze dialog command
 ├── tui-models.ts         # TUI data layer — SDK provider/model → display rows + formatters
 ├── discover.ts           # Core discovery engine — pipeline orchestrator + table formatter
 ├── models-dev.ts         # models.dev fallback matching
@@ -70,7 +70,7 @@ sequenceDiagram
     PI-->>OC: Config enriched
 
     Note over OC,PI: Later, in the TUI process...
-    OC->>PI: /modelscout (api.command.register onSelect)
+    OC->>PI: /actualyze (api.command.register onSelect)
     PI->>PI: collectModelGroups(api.state.provider) + render dialog
     PI-->>OC: api.ui.dialog (model table) — no model turn
 ```
@@ -194,7 +194,7 @@ When `"probe": "auto"` is configured, the `fingerprint()` function in
 flowchart TD
     A["Start fingerprinting"] --> B["Tier 1: Inspect modelsResponse"]
     B --> BA{"Any exact atlas<br/>owner?"}
-    BA -->|Yes| RA["atlas"]
+    BA -->|Yes| RA["actualyze"]
     BA -->|No| B1{"Unanimous owned_by<br/>in OWNED_BY_MAP?"}
     B1 -->|Yes| R2["Matched server"]
     B1 -->|No| B2{"Non-standard fields?<br/>aliases, tags, status"}
@@ -216,9 +216,9 @@ flowchart TD
 
 **Tier 1 -- modelsResponse inspection** (free, no HTTP):
 
-- An exact `owned_by: "atlas"` on any valid entry selects Atlas, including in a
-  mixed catalog. Auto-selected Atlas probing requests details only for that
-  Atlas-owned subset.
+- An exact `owned_by: "atlas"` on any valid entry selects Actualyze, including in a
+  mixed catalog. Auto-selected Actualyze probing requests details only for that
+  Actualyze-owned subset.
 - Other recognized owners must be unanimous across the catalog (`omlx`, `vllm`,
   `sglang`, `llamacpp`, `koboldcpp`, `library` → `ollama`).
 - If `owned_by` is unknown or mixed, checks for non-standard fields (`aliases`, `tags`, `status`) that indicate llama.cpp
@@ -237,7 +237,7 @@ Once detected, `PROBE_MAP` maps the server to its probe implementation:
 
 | Detected Server | Probe Used |
 | --------------- | ---------- |
-| atlas           | atlas      |
+| actualyze       | actualyze  |
 | ollama          | ollama     |
 | llamacpp        | ollama     |
 | omlx            | omlx       |
@@ -541,8 +541,8 @@ so they can only come from probes.
 ### Setup
 
 ```bash
-git clone https://github.com/rmk40/opencode-model-scout.git
-cd opencode-model-scout
+git clone https://github.com/actualyze-ai/opencode-actualyze.git
+cd opencode-actualyze
 npm install
 ```
 
@@ -603,11 +603,11 @@ curl -s http://localhost:11434/api/show \
 ### Project Structure
 
 ```
-opencode-model-scout/
+opencode-actualyze/
 ├── src/
 │   ├── constants.ts       # Single source of truth for all naming strings
 │   ├── index.ts            # Server plugin entry — config-hook discovery
-│   ├── tui.ts              # TUI plugin entry — /modelscout dialog command
+│   ├── tui.ts              # TUI plugin entry — /actualyze dialog command
 │   ├── tui-models.ts       # TUI data layer — SDK models → rows + formatters
 │   ├── discover.ts         # Pipeline orchestrator + table formatter (largest file)
 │   ├── models-dev.ts       # models.dev index + matching
@@ -664,8 +664,8 @@ All naming strings (plugin name, command name) are defined in
 `src/constants.ts`. If the plugin needs to be renamed, only that file changes:
 
 ```typescript
-export const PLUGIN_NAME = "opencode-model-scout";
-export const COMMAND_NAME = "modelscout";
+export const PLUGIN_NAME = "opencode-actualyze";
+export const COMMAND_NAME = "actualyze";
 ```
 
 ### Commit Style

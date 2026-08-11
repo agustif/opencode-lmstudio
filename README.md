@@ -1,18 +1,18 @@
-# opencode-model-scout
+# opencode-actualyze
 
-[![npm version](https://img.shields.io/npm/v/opencode-model-scout)](https://www.npmjs.com/package/opencode-model-scout)
-[![CI](https://github.com/rmk40/opencode-model-scout/actions/workflows/release.yml/badge.svg)](https://github.com/rmk40/opencode-model-scout/actions/workflows/release.yml)
+[![npm version](https://img.shields.io/npm/v/opencode-actualyze)](https://www.npmjs.com/package/opencode-actualyze)
+[![CI](https://github.com/actualyze-ai/opencode-actualyze/actions/workflows/release.yml/badge.svg)](https://github.com/actualyze-ai/opencode-actualyze/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 An [opencode](https://github.com/opencode-ai/opencode) plugin that
 auto-discovers models from OpenAI-compatible providers and enriches them with
-context window sizes, capability flags, and model metadata. Supports Atlas,
+context window sizes, capability flags, and model metadata. Supports Actualyze,
 Ollama, oMLX, vLLM, TGI, SGLang, LM Studio, KoboldCpp, llama.cpp, and LocalAI.
 
 ## Quick Start
 
 ```bash
-opencode plugin opencode-model-scout
+opencode plugin opencode-actualyze
 ```
 
 Then add `"probe": "auto"` to any provider in your `opencode.json`:
@@ -46,7 +46,7 @@ actual context window is. Without this metadata, opencode can't make informed
 decisions about which model to use, what features to enable, or how much
 context it can send.
 
-**opencode-model-scout** fixes this by building a 3-layer metadata enrichment
+**opencode-actualyze** fixes this by building a 3-layer metadata enrichment
 pipeline that runs at startup. It discovers every available model, probes
 provider-specific APIs for authoritative metadata, and falls back to the
 [models.dev](https://models.dev) database for anything the probes can't reach.
@@ -62,7 +62,7 @@ enriches model entries through three layers, applied in order:
    OpenAI-compatible provider to get the raw model list. Model IDs are
    categorized as chat, embedding, or unknown based on name patterns.
 
-2. **Provider-specific probes** — When a provider has `"probe": "atlas"`,
+2. **Provider-specific probes** — When a provider has `"probe": "actualyze"`,
    `"probe": "omlx"`, or another supported probe in its options, a purpose-built
    probe calls provider-specific APIs that expose metadata the generic OpenAI
    API does not. Probes are the most authoritative source and override keyword
@@ -83,19 +83,19 @@ priority over models.dev guesses.
 **The `opencode plugin` CLI is the recommended way to install in every case.**
 It reads the package manifest and registers the plugin in **both**
 `opencode.json` (the server plugin that runs model discovery) **and**
-`tui.json` (the TUI plugin that provides the `/modelscout` dialog) for you. The
+`tui.json` (the TUI plugin that provides the `/actualyze` dialog) for you. The
 spec it accepts can be an npm name, a `github:` reference, or a local
 `file://` path:
 
 ```bash
 # From npm
-opencode plugin opencode-model-scout
+opencode plugin opencode-actualyze
 
 # From GitHub
-opencode plugin github:rmk40/opencode-model-scout
+opencode plugin github:actualyze-ai/opencode-actualyze
 
 # From a local checkout (development)
-opencode plugin file:///absolute/path/to/opencode-model-scout
+opencode plugin file:///absolute/path/to/opencode-actualyze
 ```
 
 After installation, add provider configuration with the `probe` field — see
@@ -104,9 +104,9 @@ After installation, add provider configuration with the `probe` field — see
 > **Why two files?** opencode loads **server** plugins from the `plugin` array
 > in `opencode.json` and **TUI** plugins from a _separate_ `plugin` array in
 > `tui.json`. The server side drives startup model discovery; the TUI side
-> drives the `/modelscout` dialog. `opencode plugin …` writes both. If you
+> drives the `/actualyze` dialog. `opencode plugin …` writes both. If you
 > configure the plugin by hand, you **must** add it to both files or the
-> `/modelscout` command will not appear (see [Manual configuration](#manual-configuration)).
+> `/actualyze` command will not appear (see [Manual configuration](#manual-configuration)).
 
 ### Manual configuration
 
@@ -118,38 +118,38 @@ reference, or a `file://` path:
 
 ```json
 {
-  "plugin": ["opencode-model-scout"]
+  "plugin": ["opencode-actualyze"]
 }
 ```
 
-`~/.config/opencode/tui.json` (TUI — the `/modelscout` dialog):
+`~/.config/opencode/tui.json` (TUI — the `/actualyze` dialog):
 
 ```json
 {
   "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["opencode-model-scout"]
+  "plugin": ["opencode-actualyze"]
 }
 ```
 
 To install the package itself from npm before referencing it:
 
 ```bash
-npm install opencode-model-scout
+npm install opencode-actualyze
 ```
 
 For a local checkout, clone and build first, then reference the directory with a
 `file://` path in both config files:
 
 ```bash
-git clone https://github.com/rmk40/opencode-model-scout.git
-cd opencode-model-scout
+git clone https://github.com/actualyze-ai/opencode-actualyze.git
+cd opencode-actualyze
 npm install
 npm run compile
 ```
 
 ```json
 {
-  "plugin": ["file:///absolute/path/to/opencode-model-scout"]
+  "plugin": ["file:///absolute/path/to/opencode-actualyze"]
 }
 ```
 
@@ -216,9 +216,10 @@ tiered detection strategy (see [Supported Servers](#supported-servers)) and
 selects the appropriate probe automatically. If detection fails, the provider
 still gets discovery + models.dev fallback enrichment.
 
-Atlas can also be selected explicitly with `"probe": "atlas"`. In auto mode,
-the plugin selects it when any valid `/v1/models` entry reports the exact owner
-`atlas`. Other recognized owners still require unanimous ownership.
+Actualyze can also be selected explicitly with `"probe": "actualyze"`. In auto
+mode, the plugin recognizes Actualyze-served entries in the `/v1/models`
+response automatically, even in mixed catalogs. Other recognized owners still
+require unanimous ownership.
 
 ### Multiple Providers
 
@@ -261,7 +262,7 @@ of these to let the plugin detect the server type automatically.
 
 | Server        | Probe       | Status   | What It Extracts                                                        |
 | ------------- | ----------- | -------- | ----------------------------------------------------------------------- |
-| **Atlas**     | `atlas`     | Tested   | Context, output limit, vision, tools, reasoning from thinking signals   |
+| **Actualyze** | `actualyze` | Tested   | Context, output limit, vision, tools, reasoning from thinking signals   |
 | **oMLX**      | `omlx`      | Tested   | Context, output limit, model type, load state, size                     |
 | **Ollama**    | `ollama`    | Tested   | Context, tools, vision, thinking, family, quantization                  |
 | **llama.cpp** | `ollama`    | Expected | Partial Ollama metadata (API compat unverified against live instance)   |
@@ -278,13 +279,13 @@ of these to let the plugin detect the server type automatically.
 - **Expected** -- API-compatible based on server source code review; not yet tested against a live instance
 - **Untested** -- probe implemented based on API documentation; needs community verification
 
-The Atlas probe reuses the `/v1/models` response, then fetches encoded
+The Actualyze probe reuses the `/v1/models` response, then fetches encoded
 `/v1/models/{id}` detail endpoints with a bounded worker pool. Requests inherit
 the config-hook abort signal, and one failed model does not discard metadata
-from the others. Auto-selected probes request details only for Atlas-owned
-entries in a mixed catalog; an explicit `"probe": "atlas"` remains an
+from the others. Auto-selected probes request details only for Actualyze-owned
+entries in a mixed catalog; an explicit `"probe": "actualyze"` remains an
 all-model manual override. Foreign-owner entries remain discovered and use the
-normal models.dev fallback. The probe is tested against a live Atlas endpoint.
+normal models.dev fallback. The probe is tested against a live Actualyze endpoint.
 
 ### models.dev Fallback
 
@@ -303,20 +304,20 @@ The fallback only applies **capability flags** (`tool_call`, `reasoning`,
 context or output limits — those vary too much across quantization levels and
 providers to be guessed reliably.
 
-Atlas reports capability booleans authoritatively. A reported `false` blocks a
+Actualyze reports capability booleans authoritatively. A reported `false` blocks a
 models.dev fallback from enabling that capability, but the final opencode config
 still omits false flags. Missing, malformed, or otherwise unknown values remain
 eligible for fallback enrichment.
 
-## `/modelscout` Command
+## `/actualyze` Command
 
 Inspect the discovered models in a TUI dialog:
 
 ```
-/modelscout    Open a dialog listing discovered models with metadata
+/actualyze    Open a dialog listing discovered models with metadata
 ```
 
-Selecting `/modelscout` from the slash autocomplete opens a scrollable dialog —
+Selecting `/actualyze` from the slash autocomplete opens a scrollable dialog —
 it never sends a message to the model and never starts an assistant turn. Press
 **`esc`** to close it.
 
@@ -326,7 +327,7 @@ e.g. `ctx 262K`), on-disk size, capability flags (Vision, Tools, Reasoning), and
 provenance (family, parameter size, quantization). Example contents:
 
 ```
-Model Scout
+Actualyze
 
 oMLX (local) — 3 models
   gemma-4-26b-a4b-it-4bit
@@ -340,7 +341,7 @@ oMLX (local) — 3 models
 > **Requires a TUI-capable opencode.** The command is registered through
 > opencode's TUI plugin command API; the model-discovery and enrichment that
 > happen at startup work everywhere, but on a host without the TUI plugin
-> runtime the `/modelscout` command simply does not appear. The dialog lists
+> runtime the `/actualyze` command simply does not appear. The dialog lists
 > every model from OpenAI-compatible/local providers in the merged config — it
 > does not separately label already-configured or skipped models, since that
 > discovery-only framing is not exposed to the TUI process.
@@ -352,11 +353,11 @@ The plugin is designed to never block opencode startup:
 - **Individual fetch calls** use a 3-second timeout (model list) or 2-second
   timeout (probes), all via the shared `probeFetch()` wrapper
 - **The entire config hook** has a 5-second abort timeout. Model-list requests,
-  fingerprinting, and Atlas detail requests consume that signal. Legacy probes
+  fingerprinting, and Actualyze detail requests consume that signal. Legacy probes
   remain bounded by their individual request and body-read timeouts.
 - **Per-provider isolation** — each provider is wrapped in its own try-catch,
   so a failing provider never prevents discovery for other providers
-- **Per-model Atlas isolation** — detail requests use bounded concurrency and
+- **Per-model Actualyze isolation** — detail requests use bounded concurrency and
   individual timeouts; a failure only skips enrichment for that model
 - **All errors are caught and isolated** — a failing probe, an offline provider,
   or a malformed response never crashes the plugin or prevents opencode from
@@ -395,7 +396,7 @@ them, but `qwen3:30b` keeps your custom name and limits untouched.
 
 ## License
 
-MIT
+MIT. Based on [opencode-model-scout](https://github.com/rmk40/opencode-model-scout).
 
 ## Contributing
 
