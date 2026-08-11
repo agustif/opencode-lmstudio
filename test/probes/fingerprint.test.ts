@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { fingerprint, PROBE_MAP } from "../../src/probes/fingerprint";
+import { resolveProbe } from "../../src/probes";
 import type { OpenAIModelEntry } from "../../src/probes/types";
 
 /** Helper: create a minimal OpenAI model entry. */
@@ -402,6 +403,13 @@ describe("fingerprint", () => {
     expect(result).toBeUndefined();
     // Abort check happens after Tier 1, before Tier 2 HTTP probes — no fetch calls
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("should resolve the legacy atlas probe key to the actualyze probe", async () => {
+    const legacy = await resolveProbe("atlas", "http://localhost:8000");
+    const current = await resolveProbe("actualyze", "http://localhost:8000");
+    expect(legacy.probe).toBeDefined();
+    expect(legacy.probe).toBe(current.probe);
   });
 
   it("should map detected server to correct probe", () => {

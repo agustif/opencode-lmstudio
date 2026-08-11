@@ -67,6 +67,8 @@ export async function resolveProbe(
   signal?: AbortSignal,
 ): Promise<ResolvedProbe> {
   if (!type) return { probe: undefined };
+  // Legacy key from the upstream plugin's docs; migrated configs keep enriching.
+  if (type === "atlas") type = "actualyze";
   if (type === "auto") {
     const detected = await fingerprint(
       baseURL,
