@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "opencode-model-scout",
+  "name": "opencode-actualyze",
   "version": "1.6.0",
-  "description": "opencode plugin that auto-discovers models from OpenAI-compatible providers and enriches them with context window sizes, capability flags, and model metadata. Supports Atlas, Ollama, oMLX, vLLM, TGI, SGLang, LM Studio, KoboldCpp, llama.cpp, and LocalAI.",
+  "description": "opencode plugin that auto-discovers models from OpenAI-compatible providers and enriches them with context window sizes, capability flags, and model metadata. Supports Actualyze, Ollama, oMLX, vLLM, TGI, SGLang, LM Studio, KoboldCpp, llama.cpp, and LocalAI.",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
@@ -49,6 +49,7 @@
   },
   "keywords": [
     "opencode",
+    "actualyze",
     "opencode-plugin",
     "model-discovery",
     "openai-compatible",
@@ -72,7 +73,7 @@
     "model-server",
     "inference-server"
   ],
-  "author": "maelos",
+  "author": "Actualyze",
   "publishConfig": {
     "access": "public",
     "provenance": true
@@ -80,7 +81,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rmk40/opencode-model-scout.git"
+    "url": "git+https://github.com/actualyze-ai/opencode-actualyze.git"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.17.7"
