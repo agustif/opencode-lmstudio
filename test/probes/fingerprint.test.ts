@@ -63,7 +63,7 @@ describe("fingerprint", () => {
     expect(result).toBe("omlx");
   });
 
-  it("should detect atlas from owned_by", async () => {
+  it("should detect Actualyze from owned_by", async () => {
     const models = [makeModel({ owned_by: "atlas" })];
     const result = await fingerprint(
       "https://actualyze.test/openai",
@@ -76,7 +76,7 @@ describe("fingerprint", () => {
 
   it("should detect Actualyze in a mixed catalog without Tier 2 requests", async () => {
     const models = [
-      makeModel({ id: "atlas-model", owned_by: "atlas" }),
+      makeModel({ id: "actualyze-model", owned_by: "atlas" }),
       makeModel({ id: "foreign-model", owned_by: "vllm" }),
     ];
 
@@ -243,7 +243,7 @@ describe("fingerprint", () => {
 
   it("should prefer Actualyze over llama.cpp fields on a foreign entry", async () => {
     const models = [
-      makeModel({ id: "atlas-model", owned_by: "atlas" }),
+      makeModel({ id: "actualyze-model", owned_by: "atlas" }),
       makeModel({ id: "foreign-model", owned_by: "foreign", tags: ["tag"] }),
     ];
 
