@@ -98,6 +98,26 @@ describe("LM Studio native API v1", () => {
     )
   })
 
+  it("keeps discovering when a model reports a reasoning level this release predates", async () => {
+    const fetcher = vi.fn(async () => modelsResponse([
+      model({
+        capabilities: {
+          vision: false,
+          trained_for_tool_use: true,
+          reasoning: { allowed_options: ["off", "low", "medium", "xhigh", "on"], default: "xhigh" },
+        },
+      }),
+      model({ key: "publisher/second", display_name: "Second" }),
+    ]))
+
+    const response = await discoverModels("http://127.0.0.1:1234", {
+      fetch: fetcher as typeof fetch,
+    })
+
+    expect(response.models).toHaveLength(2)
+    expect(response.models[0]?.capabilities?.reasoning?.default).toBe("xhigh")
+  })
+
   it("rejects HTTP-200 error bodies instead of treating status as endpoint support", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: "Unexpected endpoint" }), { status: 200 }))
 
