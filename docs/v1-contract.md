@@ -42,6 +42,7 @@ Automatic discovery checks only LM Studio's documented default address,
 | `display_name` | `name` | Use the server's display name |
 | `type: "llm"` | chat model | Include |
 | `type: "embedding"` | none | Exclude from the chat provider |
+| `loaded_instances` | model map membership | Include every record by default; include only non-empty ones under `options.onlyLoaded` |
 | `capabilities.vision` | `attachment`, input modalities | Add image input only when true |
 | `capabilities.trained_for_tool_use` | `tool_call`, structured diagnostics | Keep tools enabled; report native or default handling |
 | `max_context_length` | `limit.context` | Use when no instance is loaded |

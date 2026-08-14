@@ -136,6 +136,11 @@ export function isGenerativeModel(model: LMStudioModel): model is LMStudioModel 
   return model.type === "llm"
 }
 
+/** Whether LM Studio currently holds at least one running instance of a model. */
+export function isLoadedModel(model: LMStudioModel): boolean {
+  return model.loaded_instances.length > 0
+}
+
 export interface AutoDetectedLMStudio {
   readonly serverURL: string
   readonly apiKey?: string
