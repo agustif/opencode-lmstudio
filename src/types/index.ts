@@ -9,13 +9,20 @@ export const LMStudioLoadedInstanceSchema = z.looseObject({
   }),
 })
 
+/**
+ * Reasoning levels LM Studio is known to publish. Kept as documentation only:
+ * the schema accepts any string so a level added by a newer LM Studio build
+ * cannot fail validation for the whole response.
+ */
+export const KNOWN_REASONING_LEVELS = ["off", "on", "low", "medium", "high"] as const
+
 /** Capabilities reported for a native v1 LLM record. */
 export const LMStudioCapabilitiesSchema = z.looseObject({
   vision: z.boolean(),
   trained_for_tool_use: z.boolean(),
   reasoning: z.looseObject({
-    allowed_options: z.array(z.enum(["off", "on", "low", "medium", "high"])),
-    default: z.enum(["off", "on", "low", "medium", "high"]),
+    allowed_options: z.array(z.string()),
+    default: z.string(),
   }).optional(),
 })
 
