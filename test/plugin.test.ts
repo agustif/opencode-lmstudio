@@ -4,6 +4,7 @@ import { LMStudioPlugin } from "../src/index.ts"
 import {
   effectiveContextLength,
   enhanceConfig,
+  mergeDuplicateKeys,
   toolUseMode,
   toModelConfig,
 } from "../src/plugin/enhance-config.ts"
@@ -190,6 +191,83 @@ describe("model mapping", () => {
     expect(toolUseMode(model({ capabilities: { vision: false, trained_for_tool_use: false } }))).toBe("default")
     expect(toolUseMode(model({ capabilities: undefined }))).toBe("unknown")
     expect(mapped).not.toHaveProperty("reasoning")
+  })
+})
+
+describe("duplicate model keys", () => {
+  const routed = (key: string, instances: Array<[string, number]>, maxContext = 262_144) =>
+    model({
+      key,
+      display_name: key,
+      max_context_length: maxContext,
+      loaded_instances: instances.map(([id, context]) => ({ id, config: { context_length: context } })),
+    })
+
+  it("leaves records with distinct keys untouched", () => {
+    const models = [routed("vendor/a", []), routed("vendor/b", [])]
+
+    expect(mergeDuplicateKeys(models)).toEqual(models)
+  })
+
+  it("unions loaded instances reported under one key by separate hosts", () => {
+    const merged = mergeDuplicateKeys([
+      routed("vendor/model", [["host-A/model", 8_192]]),
+      routed("vendor/model", [["host-B/model", 262_144]]),
+    ])
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0]?.loaded_instances.map((instance) => instance.id)).toEqual([
+      "host-A/model",
+      "host-B/model",
+    ])
+  })
+
+  it("de-duplicates instances repeated across records by id", () => {
+    const merged = mergeDuplicateKeys([
+      routed("vendor/model", [["shared/model", 8_192]]),
+      routed("vendor/model", [["shared/model", 8_192], ["host-B/model", 16_384]]),
+    ])
+
+    expect(merged[0]?.loaded_instances.map((instance) => instance.id)).toEqual([
+      "shared/model",
+      "host-B/model",
+    ])
+  })
+
+  it("keeps the smallest reported maximum so a merged record never overstates one it replaces", () => {
+    const merged = mergeDuplicateKeys([
+      routed("vendor/model", [], 262_144),
+      routed("vendor/model", [], 32_768),
+    ])
+
+    expect(merged[0]?.max_context_length).toBe(32_768)
+  })
+
+  it("reports the conservative minimum across hosts instead of the last record's allocation", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
+      routed("vendor/model", [["host-A/model", 8_192]]),
+      routed("vendor/model", [["host-B/model", 262_144]]),
+    ])))
+    const value = config()
+
+    const result = await enhanceConfig(value, logger())
+
+    expect(result).toMatchObject({ discovered: 1, mergedDuplicates: 1 })
+    expect(Object.keys(value.provider?.lmstudio?.models ?? {})).toEqual(["vendor/model"])
+    expect(value.provider?.lmstudio?.models?.["vendor/model"]?.limit?.context).toBe(8_192)
+  })
+
+  it("treats a key as loaded when only one of its records reports an instance", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
+      routed("vendor/model", [["host-A/model", 8_192]]),
+      routed("vendor/model", []),
+    ])))
+    const value = config()
+
+    await enhanceConfig(value, logger())
+
+    // Without the merge the idle record wins and the model reports its maximum.
+    expect(value.provider?.lmstudio?.models?.["vendor/model"]?.limit?.context).toBe(8_192)
   })
 })
 

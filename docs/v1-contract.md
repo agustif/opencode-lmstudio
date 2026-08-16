@@ -44,13 +44,23 @@ Automatic discovery checks only LM Studio's documented default address,
 | `type: "embedding"` | none | Exclude from the chat provider |
 | `capabilities.vision` | `attachment`, input modalities | Add image input only when true |
 | `capabilities.trained_for_tool_use` | `tool_call`, structured diagnostics | Keep tools enabled; report native or default handling |
-| `max_context_length` | `limit.context` | Use when no instance is loaded |
+| `max_context_length` | `limit.context` | Use when no instance is loaded; the smallest value when a key repeats |
 | loaded `config.context_length` | `limit.context` | Use one active value, or the minimum for multiple instances |
+| repeated `key` | one model entry | Merge records: union instances by id, keep the smallest maximum |
 
 The active context is also capped by `max_context_length`. A model key can
 refer to more than one loaded instance, while OpenCode has one limit per model
 key; the minimum active allocation is therefore the only safe value that does
 not overstate a routed instance.
+
+A key can also appear in more than one native record, because LM Studio reports
+a model separately for each host serving it and each record lists only that
+host's instances. Records sharing a key are merged before mapping: instances are
+unioned and de-duplicated by id, and `max_context_length` takes the smallest
+reported value. Without the merge the last record read would replace the others
+and their instances would leave the minimum, which is the same overstatement the
+policy above exists to prevent. Remaining scalar metadata comes from the first
+record for the key.
 
 LM Studio does not report a distinct maximum generation length. OpenCode
 requires `limit.output` when `limit.context` is supplied, so the plugin applies
