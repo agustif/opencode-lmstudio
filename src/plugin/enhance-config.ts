@@ -19,6 +19,7 @@ import {
 export interface EnhanceConfigResult {
   readonly discovered: number
   readonly discoveryPath: string
+  readonly mergedDuplicates: number
   readonly skippedEmbeddings: number
   readonly skippedUnsupported: number
   readonly serverURL: string
@@ -39,6 +40,46 @@ const generatedStates = new WeakMap<OpenCodeConfig, GeneratedState>()
 
 function getString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+/**
+ * Collapse native records that repeat a single `key`.
+ *
+ * LM Studio can report one model once per host it is served from, each record
+ * listing only that host's `loaded_instances`. Mapping those records straight
+ * into an object keeps whichever arrived last and silently discards the other
+ * host's instances, so `effectiveContextLength` can report an allocation
+ * larger than a routed instance actually has — the opposite of the documented
+ * conservative-minimum policy.
+ *
+ * Instances are unioned and de-duplicated by id so the minimum is taken across
+ * every reported instance. Scalar metadata comes from the first record, which
+ * observed duplicates repeat identically, except `max_context_length`: that
+ * takes the smallest reported value so a merged record never overstates any
+ * record it replaces.
+ */
+export function mergeDuplicateKeys<T extends LMStudioModel>(models: readonly T[]): T[] {
+  const merged = new Map<string, T>()
+
+  for (const model of models) {
+    const previous = merged.get(model.key)
+    if (previous === undefined) {
+      merged.set(model.key, model)
+      continue
+    }
+
+    const seen = new Set(previous.loaded_instances.map((instance) => instance.id))
+    merged.set(model.key, {
+      ...previous,
+      max_context_length: Math.min(previous.max_context_length, model.max_context_length),
+      loaded_instances: [
+        ...previous.loaded_instances,
+        ...model.loaded_instances.filter((instance) => !seen.has(instance.id)),
+      ],
+    })
+  }
+
+  return [...merged.values()]
 }
 
 export function effectiveContextLength(model: LMStudioModel): number {
@@ -128,7 +169,8 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
     const serverURL = normalizeLMStudioURL(configuredBaseURL ?? detected?.serverURL ?? DEFAULT_LM_STUDIO_URL)
     const apiKey = existing ? getLMStudioApiKey(explicitApiKey, serverURL) : detected?.apiKey
     const response = detected?.response ?? await discoverModels(serverURL, { apiKey })
-    const generative = response.models.filter(isGenerativeModel)
+    const llmRecords = response.models.filter(isGenerativeModel)
+    const generative = mergeDuplicateKeys(llmRecords)
     const discoveredModels = Object.fromEntries(
       generative.map((model) => [model.key, toModelConfig(model)]),
     )
@@ -161,6 +203,7 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
     const result = {
       discovered: generative.length,
       discoveryPath: LM_STUDIO_MODELS_PATH,
+      mergedDuplicates: llmRecords.length - generative.length,
       skippedEmbeddings: response.models.filter((model) => model.type === "embedding").length,
       skippedUnsupported: response.models.filter((model) => !isGenerativeModel(model) && model.type !== "embedding").length,
       serverURL,

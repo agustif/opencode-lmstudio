@@ -131,6 +131,13 @@ configured `context_length` is used. For multiple instances under one model
 key, the plugin uses the minimum active context to avoid overstating any routed
 instance.
 
+LM Studio may report one model more than once — for example once per host it is
+served from, each record listing only that host's instances. Those records are
+merged into a single model, taking the union of their loaded instances and the
+smallest reported maximum, so the minimum active context is computed across
+every instance rather than whichever record was read last. The discovery log
+reports `mergedDuplicates`.
+
 LM Studio does not report a separate generation limit. The plugin supplies
 OpenCode with an explicit conservative output policy: one quarter of effective
 context, capped at 8,192 tokens. An explicit user limit always wins.
