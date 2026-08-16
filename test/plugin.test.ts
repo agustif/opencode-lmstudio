@@ -4,6 +4,7 @@ import { LMStudioPlugin } from "../src/index.ts"
 import {
   effectiveContextLength,
   enhanceConfig,
+  resolveOnlyLoaded,
   toolUseMode,
   toModelConfig,
 } from "../src/plugin/enhance-config.ts"
@@ -33,6 +34,14 @@ function model(overrides: Record<string, unknown> = {}): LMStudioModel {
     capabilities: { vision: false, trained_for_tool_use: true },
     ...overrides,
   } as LMStudioModel
+}
+
+function loaded(key: string, context = 32_768): LMStudioModel {
+  return model({
+    key,
+    display_name: key,
+    loaded_instances: [{ id: `${key}:0`, config: { context_length: context } }],
+  })
 }
 
 function embedding(key: string, loadedContext?: number): LMStudioModel {
@@ -96,6 +105,26 @@ describe("LM Studio native API v1", () => {
       "https://models.example.test/api/v1/models",
       expect.objectContaining({ headers: { Authorization: "Bearer secret" } }),
     )
+  })
+
+  it("keeps discovering when a model reports a reasoning level this release predates", async () => {
+    const fetcher = vi.fn(async () => modelsResponse([
+      model({
+        capabilities: {
+          vision: false,
+          trained_for_tool_use: true,
+          reasoning: { allowed_options: ["off", "low", "medium", "xhigh", "on"], default: "xhigh" },
+        },
+      }),
+      model({ key: "publisher/second", display_name: "Second" }),
+    ]))
+
+    const response = await discoverModels("http://127.0.0.1:1234", {
+      fetch: fetcher as typeof fetch,
+    })
+
+    expect(response.models).toHaveLength(2)
+    expect(response.models[0]?.capabilities?.reasoning?.default).toBe("xhigh")
   })
 
   it("rejects HTTP-200 error bodies instead of treating status as endpoint support", async () => {
@@ -250,6 +279,97 @@ describe("config enhancement", () => {
       "zai-org/glm-4.5v",
     ])
   })
+
+  it("offers every generative model when onlyLoaded is not configured", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
+      loaded("publisher/running"),
+      model({ key: "publisher/idle", display_name: "Idle" }),
+    ])))
+    const value = config()
+
+    const result = await enhanceConfig(value, logger())
+
+    expect(result).toMatchObject({ discovered: 2, onlyLoaded: false, skippedUnloaded: 0 })
+    expect(Object.keys(value.provider?.lmstudio?.models ?? {})).toEqual([
+      "publisher/running",
+      "publisher/idle",
+    ])
+  })
+
+  it("restricts models and the generated whitelist to loaded instances when onlyLoaded is set", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
+      loaded("publisher/running", 8_192),
+      model({ key: "publisher/idle", display_name: "Idle" }),
+      model({ key: "publisher/also-idle", display_name: "Also Idle" }),
+      embedding("embedding/loaded", 1_024),
+    ])))
+    const value = config({
+      provider: { lmstudio: { options: { baseURL: "http://127.0.0.1:1234/v1", onlyLoaded: true } } },
+    })
+    const log = logger()
+
+    const result = await enhanceConfig(value, log)
+
+    expect(result).toMatchObject({
+      discovered: 1,
+      onlyLoaded: true,
+      skippedUnloaded: 2,
+      skippedEmbeddings: 1,
+    })
+    expect(Object.keys(value.provider?.lmstudio?.models ?? {})).toEqual(["publisher/running"])
+    expect(value.provider?.lmstudio?.whitelist).toEqual(["publisher/running"])
+    // The loaded instance's allocation still drives the context limit.
+    expect(value.provider?.lmstudio?.models?.["publisher/running"]?.limit?.context).toBe(8_192)
+    expect(log).toHaveBeenCalledWith(
+      "info",
+      "Discovered LM Studio models",
+      expect.objectContaining({ onlyLoaded: true, skippedUnloaded: 2 }),
+    )
+  })
+
+  it("generates an empty model list rather than idle entries when onlyLoaded finds nothing loaded", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
+      model({ key: "publisher/idle", display_name: "Idle" }),
+    ])))
+    const value = config({
+      provider: { lmstudio: { options: { baseURL: "http://127.0.0.1:1234/v1", onlyLoaded: true } } },
+    })
+
+    const result = await enhanceConfig(value, logger())
+
+    expect(result).toMatchObject({ discovered: 0, onlyLoaded: true, skippedUnloaded: 1 })
+    expect(value.provider?.lmstudio?.models).toEqual({})
+    expect(value.provider?.lmstudio?.whitelist).toEqual([])
+  })
+
+  it("keeps explicit model overrides while onlyLoaded filters discovered records", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => modelsResponse([
+      loaded("publisher/running"),
+      model({ key: "publisher/idle", display_name: "Idle" }),
+    ])))
+    const value = config({
+      provider: {
+        lmstudio: {
+          options: { baseURL: "http://127.0.0.1:1234/v1", onlyLoaded: true },
+          models: { "publisher/pinned": { name: "Pinned" } },
+        },
+      },
+    })
+
+    await enhanceConfig(value, logger())
+
+    expect(Object.keys(value.provider?.lmstudio?.models ?? {}).sort()).toEqual([
+      "publisher/pinned",
+      "publisher/running",
+    ])
+  })
+
+  it.each([undefined, false, "true", 1, null])(
+    "fails open to every model when onlyLoaded is %o",
+    (value) => {
+      expect(resolveOnlyLoaded(value)).toBe(false)
+    },
+  )
 
   it("replaces stale generated models and whitelist entries on a later config load", async () => {
     const fetcher = vi.fn()

@@ -18,7 +18,8 @@ At startup, the plugin:
 1. connects to the configured LM Studio server, or the documented default at
    `http://127.0.0.1:1234`;
 2. validates `GET /api/v1/models` against the native LM Studio response shape;
-3. adds `llm` records to OpenCode and excludes embedding records;
+3. adds `llm` records to OpenCode and excludes embedding records, or only the
+   models LM Studio currently holds loaded when `options.onlyLoaded` is set;
 4. maps the model key, display name, vision support, and effective context;
 5. uses the active loaded context when present and the model maximum when the
    model is available for on-demand loading;
@@ -122,6 +123,38 @@ support. Records with `type: "embedding"` do not enter the chat provider.
 The plugin preserves the LM Studio `key` as the model ID and uses
 `display_name` as the OpenCode display name. There are no model-family or
 model-name heuristics.
+
+### Loaded models only — `options.onlyLoaded`
+
+By default every generative record is offered, loaded or not, so LM Studio can
+load a model on demand when it is selected. Set `onlyLoaded` to restrict the
+provider to models LM Studio currently holds in memory:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-lmstudio"],
+  "provider": {
+    "lmstudio": {
+      "options": { "onlyLoaded": true }
+    }
+  }
+}
+```
+
+The model list then matches `lms ps`, and the generated whitelist shrinks with
+it so unloaded models leave the picker instead of accumulating (#17). Useful
+with a large library, where most entries are downloaded but idle, and on shared
+or remote servers where on-demand loading is not wanted.
+
+Discovery runs when OpenCode starts, so the list reflects what was loaded at
+that moment; load a different model and restart OpenCode to pick it up. If
+nothing is loaded, the plugin generates an empty model list rather than falling
+back to idle entries. The structured discovery log reports `onlyLoaded` and
+`skippedUnloaded` so the filter is visible.
+
+Only the boolean `true` enables it; any other value keeps the default of
+offering every model.
 
 ### Context limits
 

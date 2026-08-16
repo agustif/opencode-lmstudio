@@ -12,6 +12,7 @@ import {
   discoverModels,
   getLMStudioApiKey,
   isGenerativeModel,
+  isLoadedModel,
   normalizeLMStudioURL,
   toOpenAICompatibleURL,
 } from "../utils/lmstudio-api.ts"
@@ -19,7 +20,9 @@ import {
 export interface EnhanceConfigResult {
   readonly discovered: number
   readonly discoveryPath: string
+  readonly onlyLoaded: boolean
   readonly skippedEmbeddings: number
+  readonly skippedUnloaded: number
   readonly skippedUnsupported: number
   readonly serverURL: string
   readonly toolUse: {
@@ -39,6 +42,16 @@ const generatedStates = new WeakMap<OpenCodeConfig, GeneratedState>()
 
 function getString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+/**
+ * Resolve `options.onlyLoaded`, which restricts the provider to models LM
+ * Studio currently holds in memory. Fails open to `false` — the documented
+ * default is every generative record, so an unusable value never silently
+ * empties the model list.
+ */
+export function resolveOnlyLoaded(value: unknown): boolean {
+  return value === true
 }
 
 export function effectiveContextLength(model: LMStudioModel): number {
@@ -129,8 +142,13 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
     const apiKey = existing ? getLMStudioApiKey(explicitApiKey, serverURL) : detected?.apiKey
     const response = detected?.response ?? await discoverModels(serverURL, { apiKey })
     const generative = response.models.filter(isGenerativeModel)
+    // `onlyLoaded` mirrors what LM Studio is actually serving right now.
+    // Unloaded models stay discoverable by default so LM Studio can load them
+    // on demand; opting in trades that for a list with no idle entries.
+    const onlyLoaded = resolveOnlyLoaded(existing?.options?.onlyLoaded)
+    const offered = onlyLoaded ? generative.filter(isLoadedModel) : generative
     const discoveredModels = Object.fromEntries(
-      generative.map((model) => [model.key, toModelConfig(model)]),
+      offered.map((model) => [model.key, toModelConfig(model)]),
     )
     const previousGenerated = generatedStates.get(config)
     const generatedWhitelist = previousGenerated?.whitelist !== undefined
@@ -159,15 +177,17 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
     })
 
     const result = {
-      discovered: generative.length,
+      discovered: offered.length,
       discoveryPath: LM_STUDIO_MODELS_PATH,
+      onlyLoaded,
       skippedEmbeddings: response.models.filter((model) => model.type === "embedding").length,
+      skippedUnloaded: generative.length - offered.length,
       skippedUnsupported: response.models.filter((model) => !isGenerativeModel(model) && model.type !== "embedding").length,
       serverURL,
       toolUse: {
-        default: generative.filter((model) => toolUseMode(model) === "default").map((model) => model.key),
-        native: generative.filter((model) => toolUseMode(model) === "native").map((model) => model.key),
-        unknown: generative.filter((model) => toolUseMode(model) === "unknown").map((model) => model.key),
+        default: offered.filter((model) => toolUseMode(model) === "default").map((model) => model.key),
+        native: offered.filter((model) => toolUseMode(model) === "native").map((model) => model.key),
+        unknown: offered.filter((model) => toolUseMode(model) === "unknown").map((model) => model.key),
       },
     }
     await log("info", "Discovered LM Studio models", result)
