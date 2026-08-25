@@ -144,6 +144,107 @@ describe("LM Studio native API v1", () => {
   })
 })
 
+function openAIModelsResponse(ids: readonly string[], status = 200) {
+  return new Response(JSON.stringify({
+    object: "list",
+    data: ids.map((id) => ({ id, object: "model", owned_by: "organization_owner" })),
+  }), { status, headers: { "Content-Type": "application/json" } })
+}
+
+describe("OpenAI-compatible fallback", () => {
+  it("falls back to /v1/models when native endpoint is unavailable", async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/v1/models")) throw new Error("Not an LM Studio endpoint")
+      if (url.endsWith("/v1/models")) return openAIModelsResponse(["model/a", "model/b"])
+      return new Response("", { status: 404 })
+    })
+    vi.stubGlobal("fetch", fetcher)
+
+    const value = config()
+    const log = logger()
+    const result = await enhanceConfig(value, log)
+
+    expect(result?.discovered).toBe(2)
+    expect(result?.discoveryPath).toBe("/v1/models")
+    expect(result?.skippedEmbeddings).toBe(0)
+    expect(result?.skippedUnsupported).toBe(0)
+    expect(log).toHaveBeenCalledWith(
+      "info",
+      "Discovered LM Studio models",
+      expect.objectContaining({ discoveryPath: "/v1/models" }),
+    )
+    expect(value.provider?.lmstudio?.models).toEqual({
+      "model/a": expect.objectContaining({ name: "model/a", tool_call: true, attachment: false }),
+      "model/b": expect.objectContaining({ name: "model/b", tool_call: true, attachment: false }),
+    })
+    expect(value.provider?.lmstudio?.whitelist).toEqual(["model/a", "model/b"])
+  })
+
+  it("falls back to /v1/models with auth when configured server uses authentication", async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/v1/models")) throw new Error("Authentication failed")
+      if (url.endsWith("/v1/models")) return openAIModelsResponse(["auth-model"])
+      return new Response("", { status: 404 })
+    })
+    vi.stubGlobal("fetch", fetcher)
+
+    const value = config({
+      provider: {
+        lmstudio: {
+          options: { baseURL: "http://127.0.0.1:1234/v1", apiKey: "test-token" },
+        },
+      },
+    })
+
+    await enhanceConfig(value, logger())
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://127.0.0.1:1234/v1/models",
+      expect.objectContaining({ headers: { Authorization: "Bearer test-token" } }),
+    )
+    expect(value.provider?.lmstudio?.models?.["auth-model"]).toBeDefined()
+  })
+
+  it("stops at native discovery when it succeeds, ignoring /v1/models", async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/v1/models")) {
+        return modelsResponse([
+          model({
+            key: "nvidia/nemotron-3",
+            display_name: "Nemotron 3",
+            capabilities: { vision: false, trained_for_tool_use: false },
+          }),
+        ])
+      }
+      if (url.endsWith("/v1/models")) return openAIModelsResponse(["model/should-not-be-used"])
+      return new Response("", { status: 404 })
+    })
+    vi.stubGlobal("fetch", fetcher)
+
+    const value = config()
+    await enhanceConfig(value, logger())
+
+    const calls = fetcher.mock.calls.map((c) => c[0])
+    expect(calls.some((c) => String(c).endsWith("/v1/models") && !String(c).endsWith("/api/v1/models"))).toBe(false)
+    expect(value.provider?.lmstudio?.models?.["nvidia/nemotron-3"]).toBeDefined()
+    expect(value.provider?.lmstudio?.models?.["model/should-not-be-used"]).toBeUndefined()
+    expect(value.provider?.lmstudio?.whitelist).toEqual(["nvidia/nemotron-3"])
+  })
+
+  it("leaves config unchanged when both native and OpenAI endpoints fail", async () => {
+    const fetcher = vi.fn(async () => {
+      throw new Error("offline")
+    })
+    vi.stubGlobal("fetch", fetcher)
+    const value = config()
+    const log = logger()
+
+    await expect(enhanceConfig(value, log)).resolves.toBeUndefined()
+    expect(value).toEqual({})
+    expect(log).toHaveBeenCalledWith("debug", "LM Studio model discovery unavailable", expect.any(Object))
+  })
+})
+
 describe("model mapping", () => {
   it("uses the model maximum when unloaded and the conservative active minimum when loaded", () => {
     const unloaded = model({ max_context_length: 131_072 })

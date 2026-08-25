@@ -22,6 +22,7 @@ LM Studio's previous `/api/v0` shape.
 | Purpose | Endpoint | Contract |
 | --- | --- | --- |
 | Model discovery | `GET /api/v1/models` | LM Studio native REST v1 |
+| Model fallback | `GET /v1/models` | OpenAI-compatible list response |
 | Chat inference | `/v1/chat/completions` | LM Studio OpenAI-compatible API |
 
 Discovery requires a JSON object containing a `models` array. An HTTP 2xx
@@ -29,6 +30,13 @@ response with an error object or any other shape is rejected. This is required
 because LM Studio 0.4.16 can return HTTP 200 with an error body for an unknown
 endpoint. Authentication failures, timeouts, invalid JSON, and invalid schemas
 do not trigger a request to another endpoint.
+
+When the native `GET /api/v1/models` endpoint is unreachable or returns an
+unsupported response shape, the plugin falls back to the OpenAI-compatible
+`GET /v1/models` endpoint. The fallback expects `{ data: [{ id, object }] }` and
+maps each record's `id` as both the model key and display name with conservative
+defaults (32 k context, 8 k output). This enables discovery for servers that
+expose an OpenAI-compatible models list but not LM Studio's native schema.
 
 Automatic discovery checks only LM Studio's documented default address,
 `http://127.0.0.1:1234`. Custom ports and remote servers are explicit through
@@ -46,6 +54,11 @@ Automatic discovery checks only LM Studio's documented default address,
 | `capabilities.trained_for_tool_use` | `tool_call`, structured diagnostics | Keep tools enabled; report native or default handling |
 | `max_context_length` | `limit.context` | Use when no instance is loaded |
 | loaded `config.context_length` | `limit.context` | Use one active value, or the minimum for multiple instances |
+
+OpenAI-compatible fallback (`GET /v1/models`) uses a simplified mapping: each
+record's `id` becomes both the model key and display name. Vision, tool use, and
+context limits are set to conservative defaults since the OpenAI list response
+does not include LM Studio capability metadata.
 
 The active context is also capped by `max_context_length`. A model key can
 refer to more than one loaded instance, while OpenCode has one limit per model

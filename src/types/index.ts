@@ -40,8 +40,22 @@ export const LMStudioModelsResponseSchema = z.looseObject({
   models: z.array(LMStudioModelSchema),
 })
 
+/** A model record reported by the OpenAI-compatible `GET /v1/models` endpoint. */
+export const OpenAICompatibleModelSchema = z.looseObject({
+  id: z.string().min(1),
+  object: z.literal("model"),
+})
+
+/** OpenAI's documented `GET /v1/models` list response. */
+export const OpenAICompatibleModelsResponseSchema = z.looseObject({
+  object: z.literal("list"),
+  data: z.array(OpenAICompatibleModelSchema),
+})
+
 export type LMStudioModel = z.infer<typeof LMStudioModelSchema>
 export type LMStudioModelsResponse = z.infer<typeof LMStudioModelsResponseSchema>
+export type OpenAICompatibleModel = z.infer<typeof OpenAICompatibleModelSchema>
+export type OpenAICompatibleModelsResponse = z.infer<typeof OpenAICompatibleModelsResponseSchema>
 
 export type OpenCodeConfig = Parameters<NonNullable<Hooks["config"]>>[0]
 export type ProviderConfig = NonNullable<OpenCodeConfig["provider"]>[string]

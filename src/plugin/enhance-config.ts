@@ -1,15 +1,19 @@
 import type {
   LMStudioModel,
+  LMStudioModelsResponse,
   ModelConfig,
   OpenCodeConfig,
   PluginLogger,
   ProviderConfig,
 } from "../types/index.ts"
+import type { DiscoverModelsOptions } from "../utils/lmstudio-api.ts"
 import {
   DEFAULT_LM_STUDIO_URL,
   LM_STUDIO_MODELS_PATH,
+  OPENAI_MODELS_PATH,
   autoDetectLMStudio,
   discoverModels,
+  discoverOpenAIModels,
   getLMStudioApiKey,
   isGenerativeModel,
   normalizeLMStudioURL,
@@ -19,6 +23,7 @@ import {
 export interface EnhanceConfigResult {
   readonly discovered: number
   readonly discoveryPath: string
+  readonly models: Readonly<Record<string, ModelConfig>>
   readonly skippedEmbeddings: number
   readonly skippedUnsupported: number
   readonly serverURL: string
@@ -30,6 +35,8 @@ export interface EnhanceConfigResult {
 }
 
 const MAX_OUTPUT_RESERVE = 8_192
+/** Conservative context assumed for OpenAI-compatible IDs that report none. */
+const DEFAULT_OPENAI_CONTEXT = 32_768
 export type ToolUseMode = "default" | "native" | "unknown"
 interface GeneratedState {
   readonly models: Readonly<Record<string, ModelConfig>>
@@ -81,6 +88,68 @@ export function toModelConfig(model: LMStudioModel & { type: "llm" }): ModelConf
   }
 }
 
+/** Build an OpenCode model from an OpenAI-compatible `/v1/models` record id. */
+export function toModelConfigFromID(id: string, context = DEFAULT_OPENAI_CONTEXT): ModelConfig {
+  return {
+    id,
+    name: id,
+    attachment: false,
+    tool_call: true,
+    modalities: {
+      input: ["text"],
+      output: ["text"],
+    },
+    limit: {
+      context,
+      output: Math.min(MAX_OUTPUT_RESERVE, Math.max(1, Math.floor(context / 4))),
+    },
+  }
+}
+
+/** Discover models using native LM Studio v1 first, falling back to OpenAI-compatible /v1/models. */
+async function discoverCatalog(
+  serverURL: string,
+  options: DiscoverModelsOptions,
+  preFetched?: LMStudioModelsResponse,
+): Promise<EnhanceConfigResult> {
+  try {
+    const response = preFetched ?? await discoverModels(serverURL, options)
+    const generative = response.models.filter(isGenerativeModel)
+    return {
+      discovered: generative.length,
+      discoveryPath: LM_STUDIO_MODELS_PATH,
+      models: Object.fromEntries(
+        generative.map((model) => [model.key, toModelConfig(model)]),
+      ),
+      skippedEmbeddings: response.models.filter((model) => model.type === "embedding").length,
+      skippedUnsupported: response.models.filter(
+        (model) => !isGenerativeModel(model) && model.type !== "embedding",
+      ).length,
+      serverURL,
+      toolUse: {
+        default: generative.filter((m) => toolUseMode(m) === "default").map((m) => m.key),
+        native: generative.filter((m) => toolUseMode(m) === "native").map((m) => m.key),
+        unknown: generative.filter((m) => toolUseMode(m) === "unknown").map((m) => m.key),
+      },
+    }
+  } catch (nativeError) {
+    try {
+      const ids = await discoverOpenAIModels(serverURL, options)
+      return {
+        discovered: ids.length,
+        discoveryPath: OPENAI_MODELS_PATH,
+        models: Object.fromEntries(ids.map((id) => [id, toModelConfigFromID(id)])),
+        skippedEmbeddings: 0,
+        skippedUnsupported: 0,
+        serverURL,
+        toolUse: { default: [], native: [], unknown: [...ids] },
+      }
+    } catch {
+      throw nativeError
+    }
+  }
+}
+
 function mergeProvider(
   existing: ProviderConfig | undefined,
   explicitModels: Record<string, ModelConfig>,
@@ -117,21 +186,10 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
   try {
     const explicitApiKey = getString(existing?.options?.apiKey)
     const detected = existing ? undefined : await autoDetectLMStudio()
-    if (!existing && !detected) {
-      await log("debug", "LM Studio model discovery unavailable", {
-        discoveryPath: LM_STUDIO_MODELS_PATH,
-        serverURL: DEFAULT_LM_STUDIO_URL,
-      })
-      return undefined
-    }
-
     const serverURL = normalizeLMStudioURL(configuredBaseURL ?? detected?.serverURL ?? DEFAULT_LM_STUDIO_URL)
     const apiKey = existing ? getLMStudioApiKey(explicitApiKey, serverURL) : detected?.apiKey
-    const response = detected?.response ?? await discoverModels(serverURL, { apiKey })
-    const generative = response.models.filter(isGenerativeModel)
-    const discoveredModels = Object.fromEntries(
-      generative.map((model) => [model.key, toModelConfig(model)]),
-    )
+    const discovery = await discoverCatalog(serverURL, { apiKey }, detected?.response)
+    const discoveredModels = discovery.models
     const previousGenerated = generatedStates.get(config)
     const generatedWhitelist = previousGenerated?.whitelist !== undefined
       && previousGenerated.whitelist.length === (existing?.whitelist?.length ?? 0)
@@ -158,19 +216,16 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
       ...(shouldGenerateWhitelist ? { whitelist: Object.keys(discoveredModels) } : {}),
     })
 
-    const result = {
-      discovered: generative.length,
-      discoveryPath: LM_STUDIO_MODELS_PATH,
-      skippedEmbeddings: response.models.filter((model) => model.type === "embedding").length,
-      skippedUnsupported: response.models.filter((model) => !isGenerativeModel(model) && model.type !== "embedding").length,
+    const result: EnhanceConfigResult = {
+      discovered: discovery.discovered,
+      discoveryPath: discovery.discoveryPath,
+      models: discoveredModels,
+      skippedEmbeddings: discovery.skippedEmbeddings,
+      skippedUnsupported: discovery.skippedUnsupported,
       serverURL,
-      toolUse: {
-        default: generative.filter((model) => toolUseMode(model) === "default").map((model) => model.key),
-        native: generative.filter((model) => toolUseMode(model) === "native").map((model) => model.key),
-        unknown: generative.filter((model) => toolUseMode(model) === "unknown").map((model) => model.key),
-      },
+      toolUse: discovery.toolUse,
     }
-    await log("info", "Discovered LM Studio models", result)
+    await log("info", "Discovered LM Studio models", result as unknown as Record<string, unknown>)
     return result
   } catch (error) {
     const configured = Boolean(existing)
