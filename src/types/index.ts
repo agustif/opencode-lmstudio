@@ -14,8 +14,8 @@ export const LMStudioCapabilitiesSchema = z.looseObject({
   vision: z.boolean(),
   trained_for_tool_use: z.boolean(),
   reasoning: z.looseObject({
-    allowed_options: z.array(z.enum(["off", "on", "low", "medium", "high"])),
-    default: z.enum(["off", "on", "low", "medium", "high"]),
+    allowed_options: z.array(z.string()),
+    default: z.string(),
   }).optional(),
 })
 
@@ -44,6 +44,8 @@ export const LMStudioModelsResponseSchema = z.looseObject({
 export const OpenAICompatibleModelSchema = z.looseObject({
   id: z.string().min(1),
   object: z.literal("model"),
+  max_tokens: z.number().int().positive().nullable().optional(),
+  context_length: z.number().int().positive().nullable().optional(),
 })
 
 /** OpenAI's documented `GET /v1/models` list response. */

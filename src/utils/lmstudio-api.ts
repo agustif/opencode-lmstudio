@@ -138,11 +138,18 @@ export async function discoverModels(
   return result.data
 }
 
-/** Discover model IDs from an OpenAI-compatible `GET /v1/models` endpoint. */
+/** A model record from an OpenAI-compatible `GET /v1/models` endpoint with resolved metadata. */
+export interface OpenAIModelInfo {
+  readonly id: string
+  readonly maxTokens: number | undefined
+  readonly contextLength: number | undefined
+}
+
+/** Discover model records from an OpenAI-compatible `GET /v1/models` endpoint. */
 export async function discoverOpenAIModels(
   serverURL: string,
   options: DiscoverModelsOptions = {},
-): Promise<readonly string[]> {
+): Promise<readonly OpenAIModelInfo[]> {
   const fetcher = options.fetch ?? globalThis.fetch
   const timeoutMs = options.timeoutMs ?? 5_000
 
@@ -173,7 +180,11 @@ export async function discoverOpenAIModels(
     throw new LMStudioAPIError("OpenAI-compatible models API returned an unsupported response", result.error)
   }
 
-  return [...new Set(result.data.data.map((model) => model.id))]
+  return [...new Set(result.data.data.map((model) => ({
+    id: model.id,
+    maxTokens: model.max_tokens ?? undefined,
+    contextLength: model.context_length ?? undefined,
+  })))]
 }
 
 export function isGenerativeModel(model: LMStudioModel): model is LMStudioModel & { type: "llm" } {

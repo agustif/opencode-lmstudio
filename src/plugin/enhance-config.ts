@@ -6,7 +6,7 @@ import type {
   PluginLogger,
   ProviderConfig,
 } from "../types/index.ts"
-import type { DiscoverModelsOptions } from "../utils/lmstudio-api.ts"
+import type { DiscoverModelsOptions, OpenAIModelInfo } from "../utils/lmstudio-api.ts"
 import {
   DEFAULT_LM_STUDIO_URL,
   LM_STUDIO_MODELS_PATH,
@@ -89,10 +89,11 @@ export function toModelConfig(model: LMStudioModel & { type: "llm" }): ModelConf
 }
 
 /** Build an OpenCode model from an OpenAI-compatible `/v1/models` record id. */
-export function toModelConfigFromID(id: string, context = DEFAULT_OPENAI_CONTEXT): ModelConfig {
+export function toModelConfigFromID(info: OpenAIModelInfo): ModelConfig {
+  const context = info.contextLength ?? info.maxTokens ?? DEFAULT_OPENAI_CONTEXT
   return {
-    id,
-    name: id,
+    id: info.id,
+    name: info.id,
     attachment: false,
     tool_call: true,
     modalities: {
@@ -134,15 +135,15 @@ async function discoverCatalog(
     }
   } catch (nativeError) {
     try {
-      const ids = await discoverOpenAIModels(serverURL, options)
+      const models = await discoverOpenAIModels(serverURL, options)
       return {
-        discovered: ids.length,
+        discovered: models.length,
         discoveryPath: OPENAI_MODELS_PATH,
-        models: Object.fromEntries(ids.map((id) => [id, toModelConfigFromID(id)])),
+        models: Object.fromEntries(models.map((info) => [info.id, toModelConfigFromID(info)])),
         skippedEmbeddings: 0,
         skippedUnsupported: 0,
         serverURL,
-        toolUse: { default: [], native: [], unknown: [...ids] },
+        toolUse: { default: [], native: [], unknown: models.map((m) => m.id) },
       }
     } catch {
       throw nativeError
