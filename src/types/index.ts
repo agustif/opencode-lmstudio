@@ -14,8 +14,8 @@ export const LMStudioCapabilitiesSchema = z.looseObject({
   vision: z.boolean(),
   trained_for_tool_use: z.boolean(),
   reasoning: z.looseObject({
-    allowed_options: z.array(z.enum(["off", "on", "low", "medium", "high"])),
-    default: z.enum(["off", "on", "low", "medium", "high"]),
+    allowed_options: z.array(z.string()),
+    default: z.string(),
   }).optional(),
 })
 
@@ -40,8 +40,24 @@ export const LMStudioModelsResponseSchema = z.looseObject({
   models: z.array(LMStudioModelSchema),
 })
 
+/** A model record reported by the OpenAI-compatible `GET /v1/models` endpoint. */
+export const OpenAICompatibleModelSchema = z.looseObject({
+  id: z.string().min(1),
+  object: z.literal("model"),
+  max_tokens: z.number().int().positive().nullable().optional(),
+  context_length: z.number().int().positive().nullable().optional(),
+})
+
+/** OpenAI's documented `GET /v1/models` list response. */
+export const OpenAICompatibleModelsResponseSchema = z.looseObject({
+  object: z.literal("list"),
+  data: z.array(OpenAICompatibleModelSchema),
+})
+
 export type LMStudioModel = z.infer<typeof LMStudioModelSchema>
 export type LMStudioModelsResponse = z.infer<typeof LMStudioModelsResponseSchema>
+export type OpenAICompatibleModel = z.infer<typeof OpenAICompatibleModelSchema>
+export type OpenAICompatibleModelsResponse = z.infer<typeof OpenAICompatibleModelsResponseSchema>
 
 export type OpenCodeConfig = Parameters<NonNullable<Hooks["config"]>>[0]
 export type ProviderConfig = NonNullable<OpenCodeConfig["provider"]>[string]

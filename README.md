@@ -18,12 +18,14 @@ At startup, the plugin:
 1. connects to the configured LM Studio server, or the documented default at
    `http://127.0.0.1:1234`;
 2. validates `GET /api/v1/models` against the native LM Studio response shape;
-3. adds `llm` records to OpenCode and excludes embedding records;
-4. maps the model key, display name, vision support, and effective context;
-5. uses the active loaded context when present and the model maximum when the
+3. falls back to `GET /v1/models` (OpenAI-compatible) when the native endpoint
+   is unreachable or returns an unsupported schema;
+4. adds `llm` records to OpenCode and excludes embedding records;
+5. maps the model key, display name, vision support, and effective context;
+6. uses the active loaded context when present and the model maximum when the
    model is available for on-demand loading;
-6. uses the provider's server and Bearer-token boundary for discovery; and
-7. preserves explicit user model overrides and whitelists.
+7. uses the provider's server and Bearer-token boundary for discovery; and
+8. preserves explicit user model overrides and whitelists.
 
 The complete endpoint, field-mapping, output-reserve, tool, reasoning, and
 compatibility decisions are recorded in
@@ -33,7 +35,7 @@ compatibility decisions are recorded in
 
 - OpenCode 1.17.7 or newer
 - LM Studio 0.4.0 or newer with the local server enabled
-- LM Studio native `GET /api/v1/models`
+- LM Studio native `GET /api/v1/models` (or an OpenAI-compatible `GET /v1/models` fallback)
 - Node.js `22.22.2`, `24.15.0`, or a supported version from `26` onward; or
   Bun `1.3.5` or newer
 

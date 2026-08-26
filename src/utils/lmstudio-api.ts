@@ -1,5 +1,6 @@
 import {
   LMStudioModelsResponseSchema,
+  OpenAICompatibleModelsResponseSchema,
   type LMStudioModel,
   type LMStudioModelsResponse,
 } from "../types/index.ts"
@@ -8,6 +9,7 @@ import { isIP } from "node:net"
 export const DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
 export const LM_STUDIO_MODELS_PATH = "/api/v1/models"
 export const OPENAI_COMPATIBLE_PATH = "/v1"
+export const OPENAI_MODELS_PATH = "/v1/models"
 export const AUTO_DETECT_URLS = [DEFAULT_LM_STUDIO_URL] as const
 const API_KEY_ENV_VARS = ["LM_API_TOKEN", "LMSTUDIO_API_KEY"] as const
 
@@ -94,6 +96,10 @@ export function toModelsURL(serverURL: string): string {
   return `${normalizeLMStudioURL(serverURL)}${LM_STUDIO_MODELS_PATH}`
 }
 
+export function toOpenAIModelsURL(serverURL: string): string {
+  return `${normalizeLMStudioURL(serverURL)}${OPENAI_MODELS_PATH}`
+}
+
 /** Discover and validate typed model metadata from LM Studio's REST API. */
 export async function discoverModels(
   serverURL: string,
@@ -130,6 +136,55 @@ export async function discoverModels(
   }
 
   return result.data
+}
+
+/** A model record from an OpenAI-compatible `GET /v1/models` endpoint with resolved metadata. */
+export interface OpenAIModelInfo {
+  readonly id: string
+  readonly maxTokens: number | undefined
+  readonly contextLength: number | undefined
+}
+
+/** Discover model records from an OpenAI-compatible `GET /v1/models` endpoint. */
+export async function discoverOpenAIModels(
+  serverURL: string,
+  options: DiscoverModelsOptions = {},
+): Promise<readonly OpenAIModelInfo[]> {
+  const fetcher = options.fetch ?? globalThis.fetch
+  const timeoutMs = options.timeoutMs ?? 5_000
+
+  let response: Response
+  try {
+    response = await fetcher(toOpenAIModelsURL(serverURL), {
+      method: "GET",
+      headers: options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch (cause) {
+    throw new LMStudioAPIError("Could not reach the OpenAI-compatible models API", cause)
+  }
+
+  if (!response.ok) {
+    throw new LMStudioAPIError(`OpenAI-compatible models API returned HTTP ${response.status}`)
+  }
+
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch (cause) {
+    throw new LMStudioAPIError("OpenAI-compatible models API returned invalid JSON", cause)
+  }
+
+  const result = OpenAICompatibleModelsResponseSchema.safeParse(payload)
+  if (!result.success) {
+    throw new LMStudioAPIError("OpenAI-compatible models API returned an unsupported response", result.error)
+  }
+
+  return [...new Set(result.data.data.map((model) => ({
+    id: model.id,
+    maxTokens: model.max_tokens ?? undefined,
+    contextLength: model.context_length ?? undefined,
+  })))]
 }
 
 export function isGenerativeModel(model: LMStudioModel): model is LMStudioModel & { type: "llm" } {
