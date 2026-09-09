@@ -7,7 +7,7 @@ import {
   toolUseMode,
   toModelConfig,
 } from "../src/plugin/enhance-config.ts"
-import type { LMStudioLLMModel, LMStudioModel, OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
+import type { LMStudioModel, LMStudioModelRecord, OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
 import {
   LMStudioAPIError,
   autoDetectLMStudio,
@@ -19,7 +19,7 @@ import {
   toOpenAICompatibleURL,
 } from "../src/utils/lmstudio-api.ts"
 
-function model(overrides: Record<string, unknown> = {}): LMStudioLLMModel {
+function model(overrides: Record<string, unknown> = {}): LMStudioModel {
   return {
     type: "llm",
     key: "publisher/model",
@@ -32,10 +32,10 @@ function model(overrides: Record<string, unknown> = {}): LMStudioLLMModel {
     format: "gguf",
     capabilities: { vision: false, trained_for_tool_use: true },
     ...overrides,
-  } as LMStudioLLMModel
+  } as LMStudioModel
 }
 
-function embedding(key: string, loadedContext?: number): LMStudioModel {
+function embedding(key: string, loadedContext?: number): LMStudioModelRecord {
   return model({
     type: "embedding",
     key,
@@ -46,7 +46,7 @@ function embedding(key: string, loadedContext?: number): LMStudioModel {
       ? [{ id: `${key}:loaded`, config: { context_length: loadedContext } }]
       : [],
     max_context_length: 2_048,
-  }) as unknown as LMStudioModel
+  }) as unknown as LMStudioModelRecord
 }
 
 function modelsResponse(models: Array<Record<string, unknown> | LMStudioModel>, status = 200) {

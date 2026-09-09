@@ -1,8 +1,8 @@
 import {
   LMStudioModelSchema,
   LMStudioModelsResponseSchema,
-  type LMStudioLLMModel,
   type LMStudioModel,
+  type LMStudioModelRecord,
   type LMStudioModelsResponse,
 } from "../types/index.ts"
 import { isIP } from "node:net"
@@ -134,7 +134,7 @@ export async function discoverModels(
     )
   }
 
-  const models: LMStudioModel[] = []
+  const models: LMStudioModelRecord[] = []
   const invalidModels: string[] = []
   for (const [index, candidate] of result.data.models.entries()) {
     const model = LMStudioModelSchema.safeParse(candidate)
@@ -158,7 +158,7 @@ export async function discoverModels(
   return { ...result.data, models }
 }
 
-export function isGenerativeModel(model: LMStudioModel): model is LMStudioLLMModel {
+export function isGenerativeModel(model: LMStudioModelRecord): model is LMStudioModel {
   return model.type === "llm"
 }
 

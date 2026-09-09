@@ -55,11 +55,13 @@ export const LMStudioModelsResponseSchema = z.looseObject({
   models: z.array(z.any()),
 })
 
-export type LMStudioLLMModel = z.infer<typeof LMStudioLLMModelSchema>
+/** A validated LLM model that can be mapped into OpenCode. */
+export type LMStudioModel = z.infer<typeof LMStudioLLMModelSchema>
 export type LMStudioNonLLMModel = z.infer<typeof LMStudioNonLLMModelSchema>
-export type LMStudioModel = LMStudioLLMModel | LMStudioNonLLMModel
+/** A record returned by LM Studio, including records excluded from chat. */
+export type LMStudioModelRecord = LMStudioModel | LMStudioNonLLMModel
 export type LMStudioModelsResponse = {
-  models: LMStudioModel[]
+  models: LMStudioModelRecord[]
 }
 
 export type OpenCodeConfig = Parameters<NonNullable<Hooks["config"]>>[0]

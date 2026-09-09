@@ -2,7 +2,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { LMStudioModelsResponseSchema, type LMStudioModel } from "../src/types/index.ts"
+import { LMStudioModelsResponseSchema, type LMStudioModelRecord } from "../src/types/index.ts"
 import { DEFAULT_LM_STUDIO_URL, discoverModels, getLMStudioApiKey, isGenerativeModel } from "../src/utils/lmstudio-api.ts"
 
 const DEFAULT_OUTPUT = "test/fixtures/lmstudio-models.json"
@@ -33,7 +33,7 @@ function options(): Options {
   }
 }
 
-function sanitize(model: LMStudioModel): LMStudioModel {
+function sanitize(model: LMStudioModelRecord): LMStudioModelRecord {
   if (!isGenerativeModel(model)) return model
 
   return {
@@ -59,18 +59,18 @@ function sanitize(model: LMStudioModel): LMStudioModel {
   }
 }
 
-function selectRepresentative(models: LMStudioModel[]): LMStudioModel[] {
+function selectRepresentative(models: LMStudioModelRecord[]): LMStudioModelRecord[] {
   const text = models.find((model) => isGenerativeModel(model) && model.capabilities?.vision !== true)
   const vision = models.find((model) => isGenerativeModel(model) && model.capabilities?.vision === true)
   const embedding = models.find((model) => model.type === "embedding")
-  const selected = [text, vision, embedding].filter((model): model is LMStudioModel => model !== undefined)
+  const selected = [text, vision, embedding].filter((model): model is LMStudioModelRecord => model !== undefined)
   if (selected.length !== 3) {
     throw new Error("LM Studio must provide representative text, vision, and embedding models")
   }
   return selected
 }
 
-async function readModels(config: Options): Promise<LMStudioModel[]> {
+async function readModels(config: Options): Promise<LMStudioModelRecord[]> {
   if (config.input) {
     const raw: unknown = JSON.parse(readFileSync(config.input, "utf8"))
     const parsed = LMStudioModelsResponseSchema.safeParse(raw)
