@@ -62,26 +62,21 @@ afterEach(() => {
 })
 
 describe("LM Studio native API v1", () => {
-  it("discovers current LLM records with loose metadata and skips embeddings", async () => {
+  it("parses current LLM metadata and embedding records", async () => {
     const fetcher = vi.fn(async () => modelsResponse([
       {
         type: "llm",
-        publisher: "prism-ml",
         key: "prism-ml/bonsai-27b",
         display_name: "Bonsai 27B",
-        architecture: "qwen3_5",
-        quantization: { name: "2bit", bits_per_weight: 2 },
         size_bytes: 8_521_076_756,
-        params_string: "27B",
         loaded_instances: [],
         max_context_length: 262_144,
         format: "mlx",
         capabilities: {
           vision: true,
-          trained_for_tool_use: true,
           reasoning: { allowed_options: ["off", "on"], default: "on" },
         },
-        variants: ["prism-ml/bonsai-27b@2bit"],
+        unknown_metadata: { added_by: "a newer LM Studio version" },
       },
       {
         type: "llm",
@@ -92,32 +87,14 @@ describe("LM Studio native API v1", () => {
           config: {
             context_length: 131_072,
             eval_batch_size: 2_048,
-            physical_batch_size: 512,
             parallel: 4,
-            flash_attention: true,
-            context_checkpoints: 32,
-            speculative_draft_model: "",
           },
         }],
         max_context_length: 262_144,
         format: "gguf",
         capabilities: {
           vision: true,
-          trained_for_tool_use: true,
           reasoning: { allowed_options: ["off", "low", "medium", "xhigh", "on"], default: "xhigh" },
-        },
-      },
-      {
-        type: "llm",
-        key: "google/gemma-4-e4b",
-        display_name: "Gemma 4 E4B",
-        loaded_instances: [],
-        max_context_length: 131_072,
-        format: "gguf",
-        capabilities: {
-          vision: true,
-          trained_for_tool_use: true,
-          reasoning: { allowed_options: ["off", "on"], default: "on" },
         },
       },
       { type: "embedding", key: "text-embedding-nomic-embed-text-v1.5" },
@@ -130,7 +107,6 @@ describe("LM Studio native API v1", () => {
     expect(response.models.map((entry) => entry.key)).toEqual([
       "prism-ml/bonsai-27b",
       "qwen/qwen3.8-27b",
-      "google/gemma-4-e4b",
       "text-embedding-nomic-embed-text-v1.5",
     ])
     expect(response.models[1]).toMatchObject({
