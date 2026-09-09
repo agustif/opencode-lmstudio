@@ -35,18 +35,8 @@ function model(overrides: Record<string, unknown> = {}): LMStudioModel {
   } as LMStudioModel
 }
 
-function embedding(key: string, loadedContext?: number): LMStudioModelRecord {
-  return model({
-    type: "embedding",
-    key,
-    display_name: key,
-    architecture: null,
-    capabilities: undefined,
-    loaded_instances: loadedContext
-      ? [{ id: `${key}:loaded`, config: { context_length: loadedContext } }]
-      : [],
-    max_context_length: 2_048,
-  }) as unknown as LMStudioModelRecord
+function embedding(key: string): LMStudioModelRecord {
+  return { type: "embedding", key }
 }
 
 function modelsResponse(models: Array<Record<string, unknown> | LMStudioModel>, status = 200) {
@@ -291,7 +281,7 @@ describe("config enhancement", () => {
         capabilities: { vision: true, trained_for_tool_use: true },
       }),
       embedding("embedding/unloaded"),
-      embedding("embedding/loaded", 1_024),
+      embedding("embedding/loaded"),
       model({ type: "future-domain", key: "future/model", display_name: "Future Model" }),
     ])))
     const value = config()
