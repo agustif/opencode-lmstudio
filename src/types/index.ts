@@ -56,10 +56,7 @@ export const LMStudioModelsResponseSchema = z.looseObject({
 })
 
 export type LMStudioLLMModel = z.infer<typeof LMStudioLLMModelSchema>
-export type LMStudioNonLLMModel = {
-  type: string
-  key: string
-}
+export type LMStudioNonLLMModel = z.infer<typeof LMStudioNonLLMModelSchema>
 export type LMStudioModel = LMStudioLLMModel | LMStudioNonLLMModel
 export type LMStudioModelsResponse = {
   models: LMStudioModel[]
