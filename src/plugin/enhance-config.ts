@@ -54,7 +54,7 @@ export function toolUseMode(model: LMStudioModel): ToolUseMode {
   return trained === true ? "native" : trained === false ? "default" : "unknown"
 }
 
-export function toModelConfig(model: LMStudioModel & { type: "llm" }): ModelConfig {
+export function toModelConfig(model: LMStudioModel): ModelConfig {
   const vision = model.capabilities?.vision === true
   const input: Array<"text" | "image"> = vision ? ["text", "image"] : ["text"]
   const context = effectiveContextLength(model)
@@ -116,11 +116,17 @@ export async function enhanceConfig(config: OpenCodeConfig, log: PluginLogger): 
 
   try {
     const explicitApiKey = getString(existing?.options?.apiKey)
-    const detected = existing ? undefined : await autoDetectLMStudio()
+    let detectionError: unknown
+    const detected = existing
+      ? undefined
+      : await autoDetectLMStudio({ onError: (error) => { detectionError = error } })
     if (!existing && !detected) {
       await log("debug", "LM Studio model discovery unavailable", {
         discoveryPath: LM_STUDIO_MODELS_PATH,
         serverURL: DEFAULT_LM_STUDIO_URL,
+        ...(detectionError !== undefined
+          ? { error: detectionError instanceof Error ? detectionError.message : String(detectionError) }
+          : {}),
       })
       return undefined
     }

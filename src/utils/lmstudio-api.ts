@@ -1,5 +1,5 @@
 import {
-  LMStudioModelsResponseSchema,
+  parseLMStudioModelsResponse,
   type LMStudioModel,
   type LMStudioModelsResponse,
 } from "../types/index.ts"
@@ -124,15 +124,17 @@ export async function discoverModels(
     throw new LMStudioAPIError("LM Studio models API returned invalid JSON", cause)
   }
 
-  const result = LMStudioModelsResponseSchema.safeParse(payload)
-  if (!result.success) {
-    throw new LMStudioAPIError("LM Studio models API returned an unsupported response", result.error)
+  try {
+    return parseLMStudioModelsResponse(payload)
+  } catch (cause) {
+    throw new LMStudioAPIError(
+      `LM Studio models API returned an unsupported response: ${cause instanceof Error ? cause.message : String(cause)}`,
+      cause,
+    )
   }
-
-  return result.data
 }
 
-export function isGenerativeModel(model: LMStudioModel): model is LMStudioModel & { type: "llm" } {
+export function isGenerativeModel(model: LMStudioModelsResponse["models"][number]): model is LMStudioModel {
   return model.type === "llm"
 }
 
@@ -143,13 +145,20 @@ export interface AutoDetectedLMStudio {
 }
 
 /** Connect to LM Studio's documented default local endpoint when it validates. */
-export async function autoDetectLMStudio(): Promise<AutoDetectedLMStudio | undefined> {
+export interface AutoDetectOptions {
+  readonly onError?: (error: unknown) => void
+}
+
+export async function autoDetectLMStudio(
+  options: AutoDetectOptions = {},
+): Promise<AutoDetectedLMStudio | undefined> {
   for (const serverURL of AUTO_DETECT_URLS) {
     const apiKey = getLMStudioApiKey(undefined, serverURL)
     try {
       const response = await discoverModels(serverURL, { apiKey, timeoutMs: 1_000 })
       return { serverURL, apiKey, response }
-    } catch {
+    } catch (error) {
+      options.onError?.(error)
       // Continue until an endpoint returns valid LM Studio metadata.
     }
   }

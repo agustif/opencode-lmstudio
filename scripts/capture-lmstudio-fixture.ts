@@ -2,8 +2,8 @@
 
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { LMStudioModelsResponseSchema, type LMStudioModel } from "../src/types/index.ts"
-import { DEFAULT_LM_STUDIO_URL, discoverModels, getLMStudioApiKey } from "../src/utils/lmstudio-api.ts"
+import { parseLMStudioModelsResponse, type LMStudioModelRecord } from "../src/types/index.ts"
+import { DEFAULT_LM_STUDIO_URL, discoverModels, getLMStudioApiKey, isGenerativeModel } from "../src/utils/lmstudio-api.ts"
 
 const DEFAULT_OUTPUT = "test/fixtures/lmstudio-models.json"
 
@@ -33,20 +33,22 @@ function options(): Options {
   }
 }
 
-function sanitize(model: LMStudioModel): LMStudioModel {
+function sanitize(model: LMStudioModelRecord): LMStudioModelRecord {
+  if (!isGenerativeModel(model)) return { type: model.type, key: model.key }
+
   return {
     type: model.type,
     key: model.key,
     display_name: model.display_name,
-    publisher: model.publisher,
+    ...(model.publisher !== undefined ? { publisher: model.publisher } : {}),
     ...(model.architecture !== undefined ? { architecture: model.architecture } : {}),
-    quantization: model.quantization,
+    ...(model.quantization !== undefined ? { quantization: model.quantization } : {}),
     loaded_instances: model.loaded_instances.map((instance) => ({
       id: instance.id,
       config: { context_length: instance.config.context_length },
     })),
     max_context_length: model.max_context_length,
-    format: model.format,
+    ...(model.format !== undefined ? { format: model.format } : {}),
     ...(model.capabilities ? {
       capabilities: {
         vision: model.capabilities.vision,
@@ -57,23 +59,28 @@ function sanitize(model: LMStudioModel): LMStudioModel {
   }
 }
 
-function selectRepresentative(models: LMStudioModel[]): LMStudioModel[] {
-  const text = models.find((model) => model.type === "llm" && model.capabilities?.vision !== true)
-  const vision = models.find((model) => model.type === "llm" && model.capabilities?.vision === true)
+function selectRepresentative(models: LMStudioModelRecord[]): LMStudioModelRecord[] {
+  const text = models.find((model) => isGenerativeModel(model) && model.capabilities?.vision !== true)
+  const vision = models.find((model) => isGenerativeModel(model) && model.capabilities?.vision === true)
   const embedding = models.find((model) => model.type === "embedding")
-  const selected = [text, vision, embedding].filter((model): model is LMStudioModel => model !== undefined)
+  const selected = [text, vision, embedding].filter((model): model is LMStudioModelRecord => model !== undefined)
   if (selected.length !== 3) {
     throw new Error("LM Studio must provide representative text, vision, and embedding models")
   }
   return selected
 }
 
-async function readModels(config: Options): Promise<LMStudioModel[]> {
+async function readModels(config: Options): Promise<LMStudioModelRecord[]> {
   if (config.input) {
     const raw: unknown = JSON.parse(readFileSync(config.input, "utf8"))
-    const parsed = LMStudioModelsResponseSchema.safeParse(raw)
-    if (!parsed.success) throw new Error(`LM Studio fixture input failed validation: ${parsed.error.message}`)
-    return parsed.data.models
+    try {
+      return parseLMStudioModelsResponse(raw).models
+    } catch (error) {
+      throw new Error(
+        `LM Studio fixture input failed validation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      )
+    }
   }
   const apiKey = getLMStudioApiKey(undefined, config.serverURL)
   return (await discoverModels(config.serverURL, { apiKey, timeoutMs: 10_000 })).models

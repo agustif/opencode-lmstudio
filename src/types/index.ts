@@ -11,37 +11,81 @@ export const LMStudioLoadedInstanceSchema = z.looseObject({
 
 /** Capabilities reported for a native v1 LLM record. */
 export const LMStudioCapabilitiesSchema = z.looseObject({
-  vision: z.boolean(),
-  trained_for_tool_use: z.boolean(),
+  vision: z.boolean().optional(),
+  trained_for_tool_use: z.boolean().optional(),
   reasoning: z.looseObject({
-    allowed_options: z.array(z.enum(["off", "on", "low", "medium", "high"])),
-    default: z.enum(["off", "on", "low", "medium", "high"]),
+    // LM Studio can add reasoning modes without a plugin release.
+    allowed_options: z.array(z.string()).optional(),
+    default: z.string().optional(),
   }).optional(),
 })
 
-/** LM Studio's documented native `GET /api/v1/models` model record. */
-export const LMStudioModelSchema = z.looseObject({
-  type: z.string().min(1),
+/** Fields required to map an LLM into an OpenCode provider model. */
+export const LMStudioLLMModelSchema = z.looseObject({
+  type: z.literal("llm"),
   key: z.string().min(1),
   display_name: z.string().min(1),
-  publisher: z.string().min(1),
+  publisher: z.string().min(1).optional(),
   architecture: z.string().nullable().optional(),
   quantization: z.looseObject({
     name: z.string().nullable(),
     bits_per_weight: z.number().nullable(),
-  }).nullable(),
+  }).nullable().optional(),
   loaded_instances: z.array(LMStudioLoadedInstanceSchema),
   max_context_length: z.number().int().positive(),
-  format: z.enum(["gguf", "mlx"]).nullable(),
+  format: z.string().nullable().optional(),
   capabilities: LMStudioCapabilitiesSchema.optional(),
 })
 
-export const LMStudioModelsResponseSchema = z.looseObject({
-  models: z.array(LMStudioModelSchema),
+/** Non-LLM records are retained only for filtering and diagnostics. */
+export const LMStudioNonLLMModelSchema = z.looseObject({
+  type: z.string().min(1).refine((type) => type !== "llm"),
+  key: z.string().min(1),
 })
 
-export type LMStudioModel = z.infer<typeof LMStudioModelSchema>
-export type LMStudioModelsResponse = z.infer<typeof LMStudioModelsResponseSchema>
+/** LM Studio's native `GET /api/v1/models` model record. */
+export const LMStudioModelSchema = z.union([
+  LMStudioLLMModelSchema,
+  LMStudioNonLLMModelSchema,
+])
+
+export const LMStudioModelsResponseSchema = z.looseObject({
+  // Individual records are validated below so one non-LLM shape cannot
+  // impose LLM-only fields on the entire native response.
+  models: z.array(z.any()),
+})
+
+/** A validated LLM model that can be mapped into OpenCode. */
+export type LMStudioModel = z.infer<typeof LMStudioLLMModelSchema>
+export type LMStudioNonLLMModel = z.infer<typeof LMStudioNonLLMModelSchema>
+/** A record returned by LM Studio, including records excluded from chat. */
+export type LMStudioModelRecord = LMStudioModel | LMStudioNonLLMModel
+export type LMStudioModelsResponse = {
+  models: LMStudioModelRecord[]
+}
+
+/** Parse the response envelope and validate every native model record. */
+export function parseLMStudioModelsResponse(payload: unknown): LMStudioModelsResponse {
+  const envelope = LMStudioModelsResponseSchema.safeParse(payload)
+  if (!envelope.success) throw envelope.error
+
+  const models: LMStudioModelRecord[] = []
+  const issues: z.core.$ZodIssue[] = []
+  for (const [index, candidate] of envelope.data.models.entries()) {
+    const model = LMStudioModelSchema.safeParse(candidate)
+    if (model.success) {
+      models.push(model.data)
+      continue
+    }
+    issues.push(...model.error.issues.map((issue) => ({
+      ...issue,
+      path: ["models", index, ...issue.path],
+    })))
+  }
+
+  if (issues.length > 0) throw new z.ZodError(issues)
+  return { models }
+}
 
 export type OpenCodeConfig = Parameters<NonNullable<Hooks["config"]>>[0]
 export type ProviderConfig = NonNullable<OpenCodeConfig["provider"]>[string]
