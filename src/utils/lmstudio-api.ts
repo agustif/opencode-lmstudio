@@ -1,8 +1,6 @@
 import {
-  LMStudioModelSchema,
-  LMStudioModelsResponseSchema,
+  parseLMStudioModelsResponse,
   type LMStudioModel,
-  type LMStudioModelRecord,
   type LMStudioModelsResponse,
 } from "../types/index.ts"
 import { isIP } from "node:net"
@@ -126,39 +124,17 @@ export async function discoverModels(
     throw new LMStudioAPIError("LM Studio models API returned invalid JSON", cause)
   }
 
-  const result = LMStudioModelsResponseSchema.safeParse(payload)
-  if (!result.success) {
+  try {
+    return parseLMStudioModelsResponse(payload)
+  } catch (cause) {
     throw new LMStudioAPIError(
-      `LM Studio models API returned an unsupported response: ${result.error.message}`,
-      result.error,
+      `LM Studio models API returned an unsupported response: ${cause instanceof Error ? cause.message : String(cause)}`,
+      cause,
     )
   }
-
-  const models: LMStudioModelRecord[] = []
-  const invalidModels: string[] = []
-  for (const [index, candidate] of result.data.models.entries()) {
-    const model = LMStudioModelSchema.safeParse(candidate)
-    if (model.success) {
-      models.push(model.data)
-      continue
-    }
-
-    const key = typeof candidate === "object" && candidate !== null && "key" in candidate
-      ? String(candidate.key)
-      : `index ${index}`
-    invalidModels.push(`${key}: ${model.error.message}`)
-  }
-
-  if (invalidModels.length > 0) {
-    throw new LMStudioAPIError(
-      `LM Studio models API returned invalid model records: ${invalidModels.join("; ")}`,
-    )
-  }
-
-  return { ...result.data, models }
 }
 
-export function isGenerativeModel(model: LMStudioModelRecord): model is LMStudioModel {
+export function isGenerativeModel(model: LMStudioModelsResponse["models"][number]): model is LMStudioModel {
   return model.type === "llm"
 }
 
@@ -169,18 +145,22 @@ export interface AutoDetectedLMStudio {
 }
 
 /** Connect to LM Studio's documented default local endpoint when it validates. */
-export async function autoDetectLMStudio(): Promise<AutoDetectedLMStudio | undefined> {
-  let lastError: unknown
+export interface AutoDetectOptions {
+  readonly onError?: (error: unknown) => void
+}
+
+export async function autoDetectLMStudio(
+  options: AutoDetectOptions = {},
+): Promise<AutoDetectedLMStudio | undefined> {
   for (const serverURL of AUTO_DETECT_URLS) {
     const apiKey = getLMStudioApiKey(undefined, serverURL)
     try {
       const response = await discoverModels(serverURL, { apiKey, timeoutMs: 1_000 })
       return { serverURL, apiKey, response }
     } catch (error) {
-      lastError = error
+      options.onError?.(error)
       // Continue until an endpoint returns valid LM Studio metadata.
     }
   }
-  if (lastError !== undefined) throw lastError
   return undefined
 }

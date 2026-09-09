@@ -2,7 +2,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { LMStudioModelsResponseSchema, type LMStudioModelRecord } from "../src/types/index.ts"
+import { parseLMStudioModelsResponse, type LMStudioModelRecord } from "../src/types/index.ts"
 import { DEFAULT_LM_STUDIO_URL, discoverModels, getLMStudioApiKey, isGenerativeModel } from "../src/utils/lmstudio-api.ts"
 
 const DEFAULT_OUTPUT = "test/fixtures/lmstudio-models.json"
@@ -34,7 +34,7 @@ function options(): Options {
 }
 
 function sanitize(model: LMStudioModelRecord): LMStudioModelRecord {
-  if (!isGenerativeModel(model)) return model
+  if (!isGenerativeModel(model)) return { type: model.type, key: model.key }
 
   return {
     type: model.type,
@@ -73,9 +73,14 @@ function selectRepresentative(models: LMStudioModelRecord[]): LMStudioModelRecor
 async function readModels(config: Options): Promise<LMStudioModelRecord[]> {
   if (config.input) {
     const raw: unknown = JSON.parse(readFileSync(config.input, "utf8"))
-    const parsed = LMStudioModelsResponseSchema.safeParse(raw)
-    if (!parsed.success) throw new Error(`LM Studio fixture input failed validation: ${parsed.error.message}`)
-    return parsed.data.models
+    try {
+      return parseLMStudioModelsResponse(raw).models
+    } catch (error) {
+      throw new Error(
+        `LM Studio fixture input failed validation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      )
+    }
   }
   const apiKey = getLMStudioApiKey(undefined, config.serverURL)
   return (await discoverModels(config.serverURL, { apiKey, timeoutMs: 10_000 })).models

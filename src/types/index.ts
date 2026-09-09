@@ -64,6 +64,29 @@ export type LMStudioModelsResponse = {
   models: LMStudioModelRecord[]
 }
 
+/** Parse the response envelope and validate every native model record. */
+export function parseLMStudioModelsResponse(payload: unknown): LMStudioModelsResponse {
+  const envelope = LMStudioModelsResponseSchema.safeParse(payload)
+  if (!envelope.success) throw envelope.error
+
+  const models: LMStudioModelRecord[] = []
+  const issues: z.core.$ZodIssue[] = []
+  for (const [index, candidate] of envelope.data.models.entries()) {
+    const model = LMStudioModelSchema.safeParse(candidate)
+    if (model.success) {
+      models.push(model.data)
+      continue
+    }
+    issues.push(...model.error.issues.map((issue) => ({
+      ...issue,
+      path: ["models", index, ...issue.path],
+    })))
+  }
+
+  if (issues.length > 0) throw new z.ZodError(issues)
+  return { models }
+}
+
 export type OpenCodeConfig = Parameters<NonNullable<Hooks["config"]>>[0]
 export type ProviderConfig = NonNullable<OpenCodeConfig["provider"]>[string]
 export type ModelConfig = NonNullable<ProviderConfig["models"]>[string]

@@ -7,7 +7,13 @@ import {
   toolUseMode,
   toModelConfig,
 } from "../src/plugin/enhance-config.ts"
-import type { LMStudioModel, LMStudioModelRecord, OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
+import {
+  parseLMStudioModelsResponse,
+  type LMStudioModel,
+  type LMStudioModelRecord,
+  type OpenCodeConfig,
+  type PluginLogger,
+} from "../src/types/index.ts"
 import {
   LMStudioAPIError,
   autoDetectLMStudio,
@@ -153,7 +159,23 @@ describe("LM Studio native API v1", () => {
 
     await expect(discoverModels("http://127.0.0.1:1234", {
       fetch: fetcher as typeof fetch,
-    })).rejects.toThrow(/expected.*array/)
+    })).rejects.toThrow(LMStudioAPIError)
+  })
+
+  it("reports the record path when an individual model is malformed", () => {
+    expect(() => parseLMStudioModelsResponse({
+      models: [{ type: "llm", key: "broken/model" }],
+    })).toThrow(/models/)
+
+    expect(() => parseLMStudioModelsResponse({ models: [null] })).toThrow(/models/)
+  })
+
+  it("preserves auto-detection's undefined result while reporting probe failures", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline") }))
+    const onError = vi.fn()
+
+    await expect(autoDetectLMStudio({ onError })).resolves.toBeUndefined()
+    expect(onError).toHaveBeenCalledWith(expect.any(Error))
   })
 
   it.each([401, 403])("does not retry HTTP %i authentication failures against an older endpoint", async (status) => {
