@@ -7,7 +7,7 @@ import {
   toolUseMode,
   toModelConfig,
 } from "../src/plugin/enhance-config.ts"
-import type { LMStudioModel, OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
+import type { LMStudioLLMModel, LMStudioModel, OpenCodeConfig, PluginLogger } from "../src/types/index.ts"
 import {
   LMStudioAPIError,
   autoDetectLMStudio,
@@ -19,7 +19,7 @@ import {
   toOpenAICompatibleURL,
 } from "../src/utils/lmstudio-api.ts"
 
-function model(overrides: Record<string, unknown> = {}): LMStudioModel {
+function model(overrides: Record<string, unknown> = {}): LMStudioLLMModel {
   return {
     type: "llm",
     key: "publisher/model",
@@ -32,7 +32,7 @@ function model(overrides: Record<string, unknown> = {}): LMStudioModel {
     format: "gguf",
     capabilities: { vision: false, trained_for_tool_use: true },
     ...overrides,
-  } as LMStudioModel
+  } as LMStudioLLMModel
 }
 
 function embedding(key: string, loadedContext?: number): LMStudioModel {
@@ -46,7 +46,7 @@ function embedding(key: string, loadedContext?: number): LMStudioModel {
       ? [{ id: `${key}:loaded`, config: { context_length: loadedContext } }]
       : [],
     max_context_length: 2_048,
-  })
+  }) as unknown as LMStudioModel
 }
 
 function modelsResponse(models: Array<Record<string, unknown> | LMStudioModel>, status = 200) {
@@ -72,6 +72,82 @@ afterEach(() => {
 })
 
 describe("LM Studio native API v1", () => {
+  it("discovers current LLM records with loose metadata and skips embeddings", async () => {
+    const fetcher = vi.fn(async () => modelsResponse([
+      {
+        type: "llm",
+        publisher: "prism-ml",
+        key: "prism-ml/bonsai-27b",
+        display_name: "Bonsai 27B",
+        architecture: "qwen3_5",
+        quantization: { name: "2bit", bits_per_weight: 2 },
+        size_bytes: 8_521_076_756,
+        params_string: "27B",
+        loaded_instances: [],
+        max_context_length: 262_144,
+        format: "mlx",
+        capabilities: {
+          vision: true,
+          trained_for_tool_use: true,
+          reasoning: { allowed_options: ["off", "on"], default: "on" },
+        },
+        variants: ["prism-ml/bonsai-27b@2bit"],
+      },
+      {
+        type: "llm",
+        key: "qwen/qwen3.8-27b",
+        display_name: "Qwen3.8 27B",
+        loaded_instances: [{
+          id: "qwen-loaded",
+          config: {
+            context_length: 131_072,
+            eval_batch_size: 2_048,
+            physical_batch_size: 512,
+            parallel: 4,
+            flash_attention: true,
+            context_checkpoints: 32,
+            speculative_draft_model: "",
+          },
+        }],
+        max_context_length: 262_144,
+        format: "gguf",
+        capabilities: {
+          vision: true,
+          trained_for_tool_use: true,
+          reasoning: { allowed_options: ["off", "low", "medium", "xhigh", "on"], default: "xhigh" },
+        },
+      },
+      {
+        type: "llm",
+        key: "google/gemma-4-e4b",
+        display_name: "Gemma 4 E4B",
+        loaded_instances: [],
+        max_context_length: 131_072,
+        format: "gguf",
+        capabilities: {
+          vision: true,
+          trained_for_tool_use: true,
+          reasoning: { allowed_options: ["off", "on"], default: "on" },
+        },
+      },
+      { type: "embedding", key: "text-embedding-nomic-embed-text-v1.5" },
+    ]))
+
+    const response = await discoverModels("http://127.0.0.1:1234", {
+      fetch: fetcher as typeof fetch,
+    })
+
+    expect(response.models.map((entry) => entry.key)).toEqual([
+      "prism-ml/bonsai-27b",
+      "qwen/qwen3.8-27b",
+      "google/gemma-4-e4b",
+      "text-embedding-nomic-embed-text-v1.5",
+    ])
+    expect(response.models[1]).toMatchObject({
+      loaded_instances: [{ config: { context_length: 131_072 } }],
+    })
+  })
+
   it("normalizes provider URLs onto the documented native and compatible endpoints", () => {
     expect(normalizeLMStudioURL("http://127.0.0.1:1234/v1/")).toBe("http://127.0.0.1:1234")
     expect(toOpenAICompatibleURL("https://models.example.test/v1")).toBe("https://models.example.test/v1")
@@ -104,6 +180,14 @@ describe("LM Studio native API v1", () => {
     await expect(discoverModels("http://127.0.0.1:1234", {
       fetch: fetcher as typeof fetch,
     })).rejects.toThrow("unsupported response")
+  })
+
+  it("includes the validation reason when the response envelope is invalid", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ models: "not-an-array" }), { status: 200 }))
+
+    await expect(discoverModels("http://127.0.0.1:1234", {
+      fetch: fetcher as typeof fetch,
+    })).rejects.toThrow(/expected.*array/)
   })
 
   it.each([401, 403])("does not retry HTTP %i authentication failures against an older endpoint", async (status) => {
@@ -162,7 +246,7 @@ describe("model mapping", () => {
     expect(effectiveContextLength(unloaded)).toBe(131_072)
     expect(effectiveContextLength(single)).toBe(65_536)
     expect(effectiveContextLength(multiple)).toBe(16_384)
-    expect(toModelConfig(multiple as LMStudioModel & { type: "llm" }).limit).toEqual({
+    expect(toModelConfig(multiple).limit).toEqual({
       context: 16_384,
       output: 4_096,
     })
@@ -177,7 +261,7 @@ describe("model mapping", () => {
         trained_for_tool_use: false,
         reasoning: { allowed_options: ["off", "on"], default: "on" },
       },
-    }) as LMStudioModel & { type: "llm" })
+    }))
 
     expect(mapped).toMatchObject({
       id: "zai-org/glm-4.5v",
@@ -338,6 +422,20 @@ describe("config enhancement", () => {
 
     expect(value).toEqual({})
     expect(log).toHaveBeenCalledWith("debug", "LM Studio model discovery unavailable", expect.any(Object))
+  })
+
+  it("logs the native response validation reason during auto-detection", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ models: "invalid" }), { status: 200 })))
+    const value = config()
+    const log = logger()
+
+    await expect(enhanceConfig(value, log)).resolves.toBeUndefined()
+
+    expect(log).toHaveBeenCalledWith(
+      "debug",
+      "LM Studio model discovery unavailable",
+      expect.objectContaining({ error: expect.stringContaining("expected array") }),
+    )
   })
 })
 

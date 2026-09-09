@@ -1,5 +1,7 @@
 import {
+  LMStudioModelSchema,
   LMStudioModelsResponseSchema,
+  type LMStudioLLMModel,
   type LMStudioModel,
   type LMStudioModelsResponse,
 } from "../types/index.ts"
@@ -126,13 +128,37 @@ export async function discoverModels(
 
   const result = LMStudioModelsResponseSchema.safeParse(payload)
   if (!result.success) {
-    throw new LMStudioAPIError("LM Studio models API returned an unsupported response", result.error)
+    throw new LMStudioAPIError(
+      `LM Studio models API returned an unsupported response: ${result.error.message}`,
+      result.error,
+    )
   }
 
-  return result.data
+  const models: LMStudioModel[] = []
+  const invalidModels: string[] = []
+  for (const [index, candidate] of result.data.models.entries()) {
+    const model = LMStudioModelSchema.safeParse(candidate)
+    if (model.success) {
+      models.push(model.data)
+      continue
+    }
+
+    const key = typeof candidate === "object" && candidate !== null && "key" in candidate
+      ? String(candidate.key)
+      : `index ${index}`
+    invalidModels.push(`${key}: ${model.error.message}`)
+  }
+
+  if (invalidModels.length > 0) {
+    throw new LMStudioAPIError(
+      `LM Studio models API returned invalid model records: ${invalidModels.join("; ")}`,
+    )
+  }
+
+  return { ...result.data, models }
 }
 
-export function isGenerativeModel(model: LMStudioModel): model is LMStudioModel & { type: "llm" } {
+export function isGenerativeModel(model: LMStudioModel): model is LMStudioLLMModel {
   return model.type === "llm"
 }
 
@@ -144,14 +170,17 @@ export interface AutoDetectedLMStudio {
 
 /** Connect to LM Studio's documented default local endpoint when it validates. */
 export async function autoDetectLMStudio(): Promise<AutoDetectedLMStudio | undefined> {
+  let lastError: unknown
   for (const serverURL of AUTO_DETECT_URLS) {
     const apiKey = getLMStudioApiKey(undefined, serverURL)
     try {
       const response = await discoverModels(serverURL, { apiKey, timeoutMs: 1_000 })
       return { serverURL, apiKey, response }
-    } catch {
+    } catch (error) {
+      lastError = error
       // Continue until an endpoint returns valid LM Studio metadata.
     }
   }
+  if (lastError !== undefined) throw lastError
   return undefined
 }

@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { LMStudioModelsResponseSchema, type LMStudioModel } from "../src/types/index.ts"
-import { DEFAULT_LM_STUDIO_URL, discoverModels, getLMStudioApiKey } from "../src/utils/lmstudio-api.ts"
+import { DEFAULT_LM_STUDIO_URL, discoverModels, getLMStudioApiKey, isGenerativeModel } from "../src/utils/lmstudio-api.ts"
 
 const DEFAULT_OUTPUT = "test/fixtures/lmstudio-models.json"
 
@@ -34,19 +34,21 @@ function options(): Options {
 }
 
 function sanitize(model: LMStudioModel): LMStudioModel {
+  if (!isGenerativeModel(model)) return model
+
   return {
     type: model.type,
     key: model.key,
     display_name: model.display_name,
-    publisher: model.publisher,
+    ...(model.publisher !== undefined ? { publisher: model.publisher } : {}),
     ...(model.architecture !== undefined ? { architecture: model.architecture } : {}),
-    quantization: model.quantization,
+    ...(model.quantization !== undefined ? { quantization: model.quantization } : {}),
     loaded_instances: model.loaded_instances.map((instance) => ({
       id: instance.id,
       config: { context_length: instance.config.context_length },
     })),
     max_context_length: model.max_context_length,
-    format: model.format,
+    ...(model.format !== undefined ? { format: model.format } : {}),
     ...(model.capabilities ? {
       capabilities: {
         vision: model.capabilities.vision,
@@ -58,8 +60,8 @@ function sanitize(model: LMStudioModel): LMStudioModel {
 }
 
 function selectRepresentative(models: LMStudioModel[]): LMStudioModel[] {
-  const text = models.find((model) => model.type === "llm" && model.capabilities?.vision !== true)
-  const vision = models.find((model) => model.type === "llm" && model.capabilities?.vision === true)
+  const text = models.find((model) => isGenerativeModel(model) && model.capabilities?.vision !== true)
+  const vision = models.find((model) => isGenerativeModel(model) && model.capabilities?.vision === true)
   const embedding = models.find((model) => model.type === "embedding")
   const selected = [text, vision, embedding].filter((model): model is LMStudioModel => model !== undefined)
   if (selected.length !== 3) {

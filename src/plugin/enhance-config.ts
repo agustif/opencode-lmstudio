@@ -1,5 +1,5 @@
 import type {
-  LMStudioModel,
+  LMStudioLLMModel,
   ModelConfig,
   OpenCodeConfig,
   PluginLogger,
@@ -41,7 +41,7 @@ function getString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
 }
 
-export function effectiveContextLength(model: LMStudioModel): number {
+export function effectiveContextLength(model: LMStudioLLMModel): number {
   const loaded = model.loaded_instances.map((instance) => instance.config.context_length)
   return loaded.length === 0
     ? model.max_context_length
@@ -49,12 +49,12 @@ export function effectiveContextLength(model: LMStudioModel): number {
 }
 
 /** Classify LM Studio's native-vs-default tool handling without disabling tools. */
-export function toolUseMode(model: LMStudioModel): ToolUseMode {
+export function toolUseMode(model: LMStudioLLMModel): ToolUseMode {
   const trained = model.capabilities?.trained_for_tool_use
   return trained === true ? "native" : trained === false ? "default" : "unknown"
 }
 
-export function toModelConfig(model: LMStudioModel & { type: "llm" }): ModelConfig {
+export function toModelConfig(model: LMStudioLLMModel): ModelConfig {
   const vision = model.capabilities?.vision === true
   const input: Array<"text" | "image"> = vision ? ["text", "image"] : ["text"]
   const context = effectiveContextLength(model)
